@@ -44,8 +44,6 @@ if [ -f "$PID_FILE" ]; then
   fi
 fi
 
-set_pid
-
 if [[ $(networksetup -getairportnetwork en0 | grep -E "Avenger\'s Tower|Work-Network") == "" ]]; then
   echo $(/bin/date +"%Y-%m-%d %T") "Unsupported network."
   exit 3
@@ -55,6 +53,8 @@ if [[ $(pmset -g ps | head -1) =~ "Battery" ]]; then
   echo $(date +"%Y-%m-%d %T") "Computer is not connected to the power source."
   exit 4
 fi
+
+set_pid
 
 function export_env {
   export B2_ACCOUNT_ID=$(security find-generic-password -s restic-backup-b2-account-id -w)
