@@ -19,3 +19,4 @@
 # You can manually `rm` the files ~/.config/rbackup/.backup_timestamp .maint_timestamp if you want to force either for the next run.
 # I don't like the organization of the script but it's a first attempt and a sloppy backup is better than no backup.
 
+# MAYBE - Do a FULL DATA INTEGRITY CHECK WITH MAINTENANCE ONCE A MONTH (OR WHATEVER), REMAIN 1GB PER WEEKLY
