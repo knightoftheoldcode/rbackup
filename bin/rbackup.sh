@@ -20,28 +20,28 @@ RUN_BACKUP=true
 RUN_MAINT=true
 
 function set_pid {
-  echo $$ > $PID_FILE
+	echo $$ >$PID_FILE
 }
 
 function clear_pid {
-  rm $PID_FILE
+	rm $PID_FILE
 }
 
 if [[ ! -e $CONFIG_DIR ]]; then
-    mkdir $CONFIG_DIR
+	mkdir $CONFIG_DIR
 elif [[ ! -d $CONFIG_DIR ]]; then
-    echo "$CONFIG_DIR already exists but is not a directory" 1>&2
-    exit 99
+	echo "$CONFIG_DIR already exists but is not a directory" 1>&2
+	exit 99
 fi
 
 if [ -f "$PID_FILE" ]; then
-  if ps -p $(cat $PID_FILE) > /dev/null; then
-	echo $(/bin/date +"%Y-%m-%d %T") "File $PID_FILE exists. The backup is likely in progress."
-	exit 1
-  else
-	echo $(/bin/date +"%Y-%m-%d %T") "File $PID_FILE exists but process " $(cat $PID_FILE) " not found. Removing PID file."
-	rm $PID_FILE
-  fi
+	if ps -p $(cat $PID_FILE) >/dev/null; then
+		echo $(/bin/date +"%Y-%m-%d %T") "File $PID_FILE exists. The backup is likely in progress."
+		exit 1
+	else
+		echo $(/bin/date +"%Y-%m-%d %T") "File $PID_FILE exists but process " $(cat $PID_FILE) " not found. Removing PID file."
+		rm $PID_FILE
+	fi
 fi
 
 # if [[ $(networksetup -getairportnetwork en0 | grep -E "Avenger\'s Tower|Work-Network") == "" ]]; then
@@ -57,111 +57,111 @@ fi
 set_pid
 
 function export_env {
-  export B2_ACCOUNT_ID=$(security find-generic-password -s restic-backup-b2-account-id -w)
-  export B2_ACCOUNT_KEY=$(security find-generic-password -s restic-backup-b2-application-key -w)
-  export RESTIC_HOST="$(hostname)"
-  export RESTIC_PATH="$HOME"
-  export RESTIC_REPOSITORY=$(security find-generic-password -s restic-backup-repository -w)
-  export RESTIC_PASSWORD_COMMAND='security find-generic-password -s restic-backup-password-repository -w'
+	export B2_ACCOUNT_ID=$(security find-generic-password -s restic-backup-b2-account-id -w)
+	export B2_ACCOUNT_KEY=$(security find-generic-password -s restic-backup-b2-application-key -w)
+	export RESTIC_HOST="$(hostname)"
+	export RESTIC_PATH="$HOME"
+	export RESTIC_REPOSITORY=$(security find-generic-password -s restic-backup-repository -w)
+	export RESTIC_PASSWORD_COMMAND='security find-generic-password -s restic-backup-password-repository -w'
 }
 
 function restic_backup {
-  export_env
-  
-  /Users/cvs/.asdf/shims/restic backup --verbose --compression max --exclude-caches --one-file-system --cleanup-cache \
-    --exclude "$HOME/Applications" \
-    --exclude "$HOME/Downloads" \
-    --exclude "$HOME/Library" \
-    --exclude "$HOME/snap" \
-    --exclude "$HOME/.Trash" \
-    --exclude "$HOME/.android" \
-    --exclude "$HOME/.ansible" \
-    --exclude "$HOME/.asdf" \
-    --exclude "$HOME/.bundle" \
-    --exclude "$HOME/.cache" \
-    --exclude "$HOME/.dbus" \
-    --exclude "$HOME/.dropbox" \
-    --exclude "$HOME/.dropbox-dist" \
-    --exclude "$HOME/.local/pipx" \
-    --exclude "$HOME/.local/share/Trash" \
-    --exclude "$HOME/.npm" \
-    --exclude "$HOME/.pyenv" \
-    --exclude "$HOME/.thumbnails" \
-    --exclude "$HOME/.virtualenvs" \
-    --exclude "node_modules" \
-    --exclude ".tox" \
-    "$RESTIC_PATH"
+	export_env
+
+	/Users/cvs/.asdf/shims/restic backup --verbose --compression max --exclude-caches --one-file-system --cleanup-cache \
+		--exclude "$HOME/Applications" \
+		--exclude "$HOME/Downloads" \
+		--exclude "$HOME/Library" \
+		--exclude "$HOME/snap" \
+		--exclude "$HOME/.Trash" \
+		--exclude "$HOME/.android" \
+		--exclude "$HOME/.ansible" \
+		--exclude "$HOME/.asdf" \
+		--exclude "$HOME/.bundle" \
+		--exclude "$HOME/.cache" \
+		--exclude "$HOME/.dbus" \
+		--exclude "$HOME/.dropbox" \
+		--exclude "$HOME/.dropbox-dist" \
+		--exclude "$HOME/.local/pipx" \
+		--exclude "$HOME/.local/share/Trash" \
+		--exclude "$HOME/.npm" \
+		--exclude "$HOME/.pyenv" \
+		--exclude "$HOME/.thumbnails" \
+		--exclude "$HOME/.virtualenvs" \
+		--exclude "node_modules" \
+		--exclude ".tox" \
+		"$RESTIC_PATH"
 }
 
 function rbackup {
-  echo $(/bin/date +"%Y-%m-%d %T") "-- Backup Start --"
-  
-  restic_backup
-  
-  echo $(/bin/date +"%Y-%m-%d %T") "-- Backup Finished --"
-  echo $(/bin/date -v +1H +"%s") > $BACKUP_TIMESTAMP_FILE
+	echo $(/bin/date +"%Y-%m-%d %T") "-- Backup Start --"
+
+	restic_backup
+
+	echo $(/bin/date +"%Y-%m-%d %T") "-- Backup Finished --"
+	echo $(/bin/date -v +1H +"%s") >$BACKUP_TIMESTAMP_FILE
 }
 
 if [ -f "$BACKUP_TIMESTAMP_FILE" ]; then
-  time_run=$(cat "$BACKUP_TIMESTAMP_FILE")
-  current_time=$(date +"%s")
-    
-  if [ "$current_time" -lt "$time_run" ]; then
-    RUN_BACKUP=false
-  fi
+	time_run=$(cat "$BACKUP_TIMESTAMP_FILE")
+	current_time=$(date +"%s")
+
+	if [ "$current_time" -lt "$time_run" ]; then
+		RUN_BACKUP=false
+	fi
 fi
 
 if [ "$RUN_BACKUP" == true ]; then
-  rbackup
+	rbackup
 fi
 
 function restic_forget {
-  export_env
+	export_env
 
-  /Users/cvs/.asdf/shims/restic forget \
-        --host "$RESTIC_HOST" \
-        --path "$RESTIC_PATH" \
-        --tag '' \
-        --keep-within-daily 7d \
-        --keep-within-weekly 1m \
-        --keep-within-monthly 1y \
-        --keep-within-yearly 100y
+	/Users/cvs/.asdf/shims/restic forget \
+		--host "$RESTIC_HOST" \
+		--path "$RESTIC_PATH" \
+		--tag '' \
+		--keep-within-daily 7d \
+		--keep-within-weekly 1m \
+		--keep-within-monthly 1y \
+		--keep-within-yearly 100y
 }
 
 function restic_prune {
-  export_env
+	export_env
 
-  /Users/cvs/.asdf/shims/restic prune
+	/Users/cvs/.asdf/shims/restic prune
 }
 
 function restic_check {
-  export_env
+	export_env
 
-  /Users/cvs/.asdf/shims/restic check --read-data-subset=1G
+	/Users/cvs/.asdf/shims/restic check --read-data-subset=1G
 }
 
 function rmaint {
-  echo $(/bin/date +"%Y-%m-%d %T") "-- Maintenance Start --"
-  
-  restic_forget
-  restic_prune
-  restic_check
-  
-  echo $(/bin/date +"%Y-%m-%d %T") "-- Maintenance Finished --"
-  echo $(/bin/date -v +1w +"%s") > $MAINT_TIMESTAMP_FILE
+	echo $(/bin/date +"%Y-%m-%d %T") "-- Maintenance Start --"
+
+	restic_forget
+	restic_prune
+	restic_check
+
+	echo $(/bin/date +"%Y-%m-%d %T") "-- Maintenance Finished --"
+	echo $(/bin/date -v +1w +"%s") >$MAINT_TIMESTAMP_FILE
 }
 
 if [ -f "$MAINT_TIMESTAMP_FILE" ]; then
-  time_run=$(cat "$MAINT_TIMESTAMP_FILE")
-  current_time=$(date +"%s")
-    
-  if [ "$current_time" -lt "$time_run" ]; then
-    RUN_MAINT=false
-  fi
+	time_run=$(cat "$MAINT_TIMESTAMP_FILE")
+	current_time=$(date +"%s")
+
+	if [ "$current_time" -lt "$time_run" ]; then
+		RUN_MAINT=false
+	fi
 fi
 
 if [ "$RUN_MAINT" == true ]; then
-  rmaint
+	rmaint
 fi
 
 clear_pid
