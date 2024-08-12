@@ -4,7 +4,7 @@ http://www.apple.com/DTDs/PropertyList-1.0.dtd>
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>dev.knightoftheoldcode.rbackup-hephaestus.plist</string>
+  <string>dev.knightoftheoldcode.rbackup-sequoia.plist</string>
   
   <key>Program</key>
   <string>/Users/cvs/.local/bin/rbackup.sh</string>
@@ -19,9 +19,9 @@ http://www.apple.com/DTDs/PropertyList-1.0.dtd>
   <string>/Users/cvs/</string>
   
   <key>StandardOutPath</key>
-  <string>/Users/cvs/Library/Logs/dev.knightoftheoldcode/rbackup/rbackup-hephaestus.out.log</string>
+  <string>/Users/cvs/Library/Logs/dev.knightoftheoldcode/rbackup/rbackup-sequoia.out.log</string>
   
   <key>StandardErrorPath</key>
-  <string>/Users/cvs/Library/Logs/dev.knightoftheoldcode/rbackup/rbackup-hephaestus.error.log</string>
+  <string>/Users/cvs/Library/Logs/dev.knightoftheoldcode/rbackup/rbackup-sequoia.error.log</string>
 </dict>
 </plist>

@@ -3,13 +3,13 @@
 # maybe have a few parameters for the justfile to replace certain things like backup interval, etc
 
 # Locations:
-# - rbackup.sh -> ~/.local/bin
-# - dev.knightoftheoldcode.rbackup-hephaestus.plist -> ~/Library/LaunchAgents
+# - bin/rbackup.sh -> ~/.local/bin
+# - config/dev.knightoftheoldcode.rbackup-sequoia.plist -> ~/Library/LaunchAgents
 
 # macOS (Darwin) - You can run as a service using launchd:
-# launchctl load ~/Library/LaunchAgents/dev.knightoftheoldcode.rbackup-hephaestus.plist
-# launchctl print gui/501/dev.knightoftheoldcode.rbackup-hephaestus.plist
-# launchctl bootout gui/501/dev.knightoftheoldcode.rbackup-hephaestus.plist
+# launchctl load ~/Library/LaunchAgents/dev.knightoftheoldcode.rbackup-sequoia.plist
+# launchctl print gui/501/dev.knightoftheoldcode.rbackup-sequoia.plist
+# launchctl bootout gui/501/dev.knightoftheoldcode.rbackup-sequoia.plist
 
 # Future versions of this Justfile will take a configuration file (hostname, etc--or read straight from the system cli values)
 # to build out the various files and stick them where they should go and run launchctl commands (or systemd, or whatever depending on your OS).

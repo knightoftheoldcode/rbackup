@@ -11,6 +11,8 @@ set -euo pipefail
 # TODO: extract all user specific items (such as wifi network names) into environment vars (maybe even into encrypted secrets?)
 # TODO: consider using exit code 0 (OK) for the case where we fall through due to timestamp override (instead of 2 which is TECHNICALLY an error and shows in stuff like launchcontrol app)
 # TODO: is it worth doing a restic check (without read-data on a more regular basis? if so we can prune more often and do a check without read-data, then just read-data check after the "online" maintenance script)
+# TODO: move excludes to config file in ~/.config/rbackup/exclusions.txt --exclude-file <file>
+# TODO: add exclusion option for known large file types (.iso, .ipsw, etc)
 
 CONFIG_DIR=~/.config/rbackup
 PID_FILE=$CONFIG_DIR/.pid
@@ -36,11 +38,11 @@ fi
 
 if [ -f "$PID_FILE" ]; then
   if ps -p $(cat $PID_FILE) > /dev/null; then
-	echo $(/bin/date +"%Y-%m-%d %T") "File $PID_FILE exists. The backup is likely in progress."
-	exit 1
+  echo $(/bin/date +"%Y-%m-%d %T") "File $PID_FILE exists. The backup is likely in progress."
+  exit 1
   else
-	echo $(/bin/date +"%Y-%m-%d %T") "File $PID_FILE exists but process " $(cat $PID_FILE) " not found. Removing PID file."
-	rm $PID_FILE
+  echo $(/bin/date +"%Y-%m-%d %T") "File $PID_FILE exists but process " $(cat $PID_FILE) " not found. Removing PID file."
+  rm $PID_FILE
   fi
 fi
 
@@ -119,13 +121,13 @@ function restic_forget {
   export_env
 
   /Users/cvs/.asdf/shims/restic forget \
-        --host "$RESTIC_HOST" \
-        --path "$RESTIC_PATH" \
-        --tag '' \
-        --keep-within-daily 7d \
-        --keep-within-weekly 1m \
-        --keep-within-monthly 1y \
-        --keep-within-yearly 100y
+    --host "$RESTIC_HOST" \
+    --path "$RESTIC_PATH" \
+    --tag '' \
+    --keep-within-daily 7d \
+    --keep-within-weekly 1m \
+    --keep-within-monthly 1y \
+    --keep-within-yearly 100y
 }
 
 function restic_prune {
