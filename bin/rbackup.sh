@@ -46,15 +46,16 @@ if [ -f "$PID_FILE" ]; then
   fi
 fi
 
+# Sequoia seems to not provide a proper SSID
 # if [[ $(networksetup -getairportnetwork en0 | grep -E "Avenger\'s Tower|Work-Network") == "" ]]; then
 #  echo $(/bin/date +"%Y-%m-%d %T") "Unsupported network."
 #  exit 3
 # fi
 
-# if [[ $(pmset -g ps | head -1) =~ "Battery" ]]; then
-#  echo $(date +"%Y-%m-%d %T") "Computer is not connected to the power source."
-#  exit 4
-# fi
+if [[ $(pmset -g ps | head -1) =~ "Battery" ]]; then
+ echo $(date +"%Y-%m-%d %T") "Computer is not connected to the power source."
+ exit 4
+fi
 
 set_pid
 
