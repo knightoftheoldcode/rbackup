@@ -13,6 +13,7 @@ set -euo pipefail
 # TODO: is it worth doing a restic check (without read-data on a more regular basis? if so we can prune more often and do a check without read-data, then just read-data check after the "online" maintenance script)
 # TODO: move excludes to config file in ~/.config/rbackup/exclusions.txt --exclude-file <file>
 # TODO: add exclusion option for known large file types (.iso, .ipsw, etc)
+# TODO: possible error: hangs after start message displayed, error file "unable to open repo" ... ensure data isn't blocked by something like tripmode
 
 CONFIG_DIR=~/.config/rbackup
 PID_FILE=$CONFIG_DIR/.pid
