@@ -94,6 +94,7 @@ function restic_backup {
     --exclude "$HOME/.npm" \
     --exclude "$HOME/.pyenv" \
     --exclude "$HOME/.thumbnails" \
+    --exclude "$HOME/.tmp" \
     --exclude "$HOME/.virtualenvs" \
     --exclude "node_modules" \
     --exclude ".tox" \
@@ -128,7 +129,10 @@ function restic_forget {
   /Users/cvs/.asdf/shims/restic forget \
         --host "$RESTIC_HOST" \
         --path "$RESTIC_PATH" \
-        --tag '' \
+        --tag 'rbackup' \
+        --group-by 'host,tags' \
+        --keep-last 8 \
+        --keep-within-hourly 1d \
         --keep-within-daily 7d \
         --keep-within-weekly 1m \
         --keep-within-monthly 1y \
