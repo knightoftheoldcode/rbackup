@@ -62,13 +62,20 @@ function export_env {
   export RESTIC_HOST="$(hostname)"
   export RESTIC_PATH="$HOME"
   export RESTIC_REPOSITORY=$(security find-generic-password -s restic-backup-repository -w)
-  export RESTIC_PASSWORD_COMMAND='security find-generic-password -s restic-backup-password-repository -w'
+  export RESTIC_PASSWORD_COMMAND='security find-generic-password -s restic-backup-repository-password -w'
 }
 
 function restic_backup {
   export_env
-  
-  /Users/cvs/.asdf/shims/restic backup --verbose --compression max --exclude-caches --one-file-system --cleanup-cache \
+
+  /Users/cvs/.asdf/shims/restic backup \
+    --verbose \
+    --compression max \
+    --one-file-system \
+    --cleanup-cache \
+    --exclude-caches \
+    --tag 'rbackup' \
+    --group-by 'host,tags' \
     --exclude "$HOME/Applications" \
     --exclude "$HOME/Downloads" \
     --exclude "$HOME/Library" \
@@ -95,9 +102,9 @@ function restic_backup {
 
 function rbackup {
   echo $(/bin/date +"%Y-%m-%d %T") "-- Backup Start --"
-  
+
   restic_backup
-  
+
   echo $(/bin/date +"%Y-%m-%d %T") "-- Backup Finished --"
   echo $(/bin/date -v +1H +"%s") > $BACKUP_TIMESTAMP_FILE
 }
@@ -105,7 +112,7 @@ function rbackup {
 if [ -f "$BACKUP_TIMESTAMP_FILE" ]; then
   time_run=$(cat "$BACKUP_TIMESTAMP_FILE")
   current_time=$(date +"%s")
-    
+
   if [ "$current_time" -lt "$time_run" ]; then
     RUN_BACKUP=false
   fi
@@ -142,11 +149,11 @@ function restic_check {
 
 function rmaint {
   echo $(/bin/date +"%Y-%m-%d %T") "-- Maintenance Start --"
-  
+
   restic_forget
   restic_prune
   restic_check
-  
+
   echo $(/bin/date +"%Y-%m-%d %T") "-- Maintenance Finished --"
   echo $(/bin/date -v +1w +"%s") > $MAINT_TIMESTAMP_FILE
 }
@@ -154,7 +161,7 @@ function rmaint {
 if [ -f "$MAINT_TIMESTAMP_FILE" ]; then
   time_run=$(cat "$MAINT_TIMESTAMP_FILE")
   current_time=$(date +"%s")
-    
+
   if [ "$current_time" -lt "$time_run" ]; then
     RUN_MAINT=false
   fi
