@@ -1,5 +1,5 @@
 # Create directory structure and copy files over
-# Execute systemd launchd etc to install 
+# Execute systemd launchd etc to install
 # maybe have a few parameters for the justfile to replace certain things like backup interval, etc
 
 # Locations:
