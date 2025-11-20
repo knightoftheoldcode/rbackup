@@ -1,5 +1,7 @@
 #!/bin/bash
-set -euo pipefail
+
+# Exit immediately if a command exits with a non-zero status
+set -eEo pipefail
 
 # TODO: create a GitHub repo OSS with MIT? license? (show how to fork and clone as a sample in my DevLab book)
 # TODO: move into .restic directory in $HOME (is this wise?)
@@ -44,7 +46,7 @@ if [ -f "$PID_FILE" ]; then
   fi
 fi
 
-# if [[ $(networksetup -getairportnetwork en0 | grep -E "Avenger\'s Tower|Work-Network") == "" ]]; then
+# if [[ $(networksetup -getairportnetwork en0 | grep -E "Mount Olympus|Work-Network") == "" ]]; then
 #  echo $(/bin/date +"%Y-%m-%d %T") "Unsupported network."
 #  exit 3
 # fi
@@ -61,32 +63,43 @@ function export_env {
   export B2_ACCOUNT_KEY=$(security find-generic-password -s restic-backup-b2-application-key -w)
   export RESTIC_HOST="$(hostname)"
   export RESTIC_PATH="$HOME"
+  export RESTIC_TAG="rbackup"
   export RESTIC_REPOSITORY=$(security find-generic-password -s restic-backup-repository -w)
   export RESTIC_PASSWORD_COMMAND='security find-generic-password -s restic-backup-password-repository -w'
 }
 
 function restic_backup {
   export_env
-  
-  /Users/cvs/.asdf/shims/restic backup --verbose --compression max --exclude-caches --one-file-system --cleanup-cache \
+
+  restic backup \
+    --verbose \
+    --compression max \
+    --one-file-system \
+    --cleanup-cache \
+    --exclude-caches \
+    --group-by 'host,tags' \
+    --tag "$RESTIC_TAG" \
     --exclude "$HOME/Applications" \
+    --exclude "$HOME/Applications (Parallels)" \
     --exclude "$HOME/Downloads" \
     --exclude "$HOME/Library" \
+    --exclude "$HOME/Parallels" \
     --exclude "$HOME/snap" \
-    --exclude "$HOME/.Trash" \
     --exclude "$HOME/.android" \
     --exclude "$HOME/.ansible" \
-    --exclude "$HOME/.asdf" \
     --exclude "$HOME/.bundle" \
     --exclude "$HOME/.cache" \
+    --exclude "$HOME/.cargo" \
     --exclude "$HOME/.dbus" \
-    --exclude "$HOME/.dropbox" \
     --exclude "$HOME/.dropbox-dist" \
+    --exclude "$HOME/.dropbox" \
     --exclude "$HOME/.local/pipx" \
     --exclude "$HOME/.local/share/Trash" \
     --exclude "$HOME/.npm" \
     --exclude "$HOME/.pyenv" \
+    --exclude "$HOME/.rustup" \
     --exclude "$HOME/.thumbnails" \
+    --exclude "$HOME/.Trash" \
     --exclude "$HOME/.virtualenvs" \
     --exclude "node_modules" \
     --exclude ".tox" \
@@ -95,9 +108,9 @@ function restic_backup {
 
 function rbackup {
   echo $(/bin/date +"%Y-%m-%d %T") "-- Backup Start --"
-  
+
   restic_backup
-  
+
   echo $(/bin/date +"%Y-%m-%d %T") "-- Backup Finished --"
   echo $(/bin/date -v +1H +"%s") > $BACKUP_TIMESTAMP_FILE
 }
@@ -105,7 +118,7 @@ function rbackup {
 if [ -f "$BACKUP_TIMESTAMP_FILE" ]; then
   time_run=$(cat "$BACKUP_TIMESTAMP_FILE")
   current_time=$(date +"%s")
-    
+
   if [ "$current_time" -lt "$time_run" ]; then
     RUN_BACKUP=false
   fi
@@ -118,10 +131,10 @@ fi
 function restic_forget {
   export_env
 
-  /Users/cvs/.asdf/shims/restic forget \
+  restic forget \
         --host "$RESTIC_HOST" \
         --path "$RESTIC_PATH" \
-        --tag '' \
+        --tag "$RESTIC_TAG" \
         --keep-within-daily 7d \
         --keep-within-weekly 1m \
         --keep-within-monthly 1y \
@@ -142,11 +155,11 @@ function restic_check {
 
 function rmaint {
   echo $(/bin/date +"%Y-%m-%d %T") "-- Maintenance Start --"
-  
+
   restic_forget
   restic_prune
   restic_check
-  
+
   echo $(/bin/date +"%Y-%m-%d %T") "-- Maintenance Finished --"
   echo $(/bin/date -v +1w +"%s") > $MAINT_TIMESTAMP_FILE
 }
@@ -154,7 +167,7 @@ function rmaint {
 if [ -f "$MAINT_TIMESTAMP_FILE" ]; then
   time_run=$(cat "$MAINT_TIMESTAMP_FILE")
   current_time=$(date +"%s")
-    
+
   if [ "$current_time" -lt "$time_run" ]; then
     RUN_MAINT=false
   fi
