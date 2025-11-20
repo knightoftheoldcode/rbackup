@@ -1,9 +1,9 @@
 # Create directory structure and copy files over
-# Execute systemd launchd etc to install 
+# Execute systemd launchd etc to install
 # maybe have a few parameters for the justfile to replace certain things like backup interval, etc
 
 # Locations:
-# - rbackup.sh -> ~/.local/bin
+# - rbackup.sh -> ~/.local/share/rbackup
 # - dev.knightoftheoldcode.rbackup-hephaestus.plist -> ~/Library/LaunchAgents
 
 # macOS (Darwin) - You can run as a service using launchd:
@@ -20,3 +20,11 @@
 # I don't like the organization of the script but it's a first attempt and a sloppy backup is better than no backup.
 
 # MAYBE - Do a FULL DATA INTEGRITY CHECK WITH MAINTENANCE ONCE A MONTH (OR WHATEVER), REMAIN 1GB PER WEEKLY
+
+# security cli on macOS (basically cli for "passwords")
+# keyID: security add-generic-password -s restic-backup-b2-account-id -a rbackup-battlestation-hephaestus -w
+# applicationKey: security add-generic-password -s restic-backup-b2-application-key -a rbackup-battlestation-hephaestus -w
+# keyName (b2:repo_name): security add-generic-password -s restic-backup-repository -a rbackup-battlestation-hephaestus -w
+# repoPass (repo pass--generated): security add-generic-password -s restic-backup-password-repository -a rbackup-battlestation-hephaestus -w
+
+
