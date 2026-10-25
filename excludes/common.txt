@@ -1,0 +1,19 @@
+# Excluded on every OS. restic expands $VARS here (os.ExpandEnv). Patterns
+# without a slash match at any depth. Directories holding a CACHEDIR.TAG
+# (cargo's target/, many tool caches) are skipped by exclude-caches already.
+
+# Reinstallable dependencies and build output
+node_modules
+.venv
+venv
+__pycache__
+.tox
+.terraform
+.next
+.gradle
+.pnpm-store
+.yarn/cache
+
+# OS clutter
+.DS_Store
+Thumbs.db

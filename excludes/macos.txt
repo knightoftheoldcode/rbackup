@@ -1,0 +1,33 @@
+# macOS home excludes (on top of common.txt).
+
+# App data, caches and containers. Also holds ~/Library/CloudStorage, so
+# Dropbox (and the vault) is out here; see the README for the one install
+# that backs up Dropbox on purpose.
+$HOME/Library
+$HOME/.dropbox
+$HOME/.Trash
+$HOME/Applications
+$HOME/Downloads
+
+# Caches and reinstallable toolchains
+$HOME/.cache
+$HOME/.npm
+$HOME/.cargo/registry
+$HOME/.rustup
+$HOME/go/pkg/mod
+$HOME/.m2/repository
+$HOME/.local/share/mise/installs
+$HOME/.local/share/mise/downloads
+$HOME/.local/share/macos-custom/backups
+
+# VM and container disks
+$HOME/Parallels
+$HOME/Applications (Parallels)
+$HOME/.orbstack
+$HOME/OrbStack
+$HOME/.colima
+$HOME/.lima
+$HOME/.docker
+
+# iCloud Photos already keeps the originals
+$HOME/Pictures/Photos Library.photoslibrary

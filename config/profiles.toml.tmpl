@@ -1,0 +1,81 @@
+# rbackup: resticprofile config for one install's home directory.
+#
+# bin/rbackup-setup renders this into ~/.config/rbackup/profiles.toml (mode
+# 600), filling in the @@...@@ placeholders. Don't edit the rendered copy:
+# change this template and re-run setup (bootstrap does that).
+#
+# Nothing identifying lives here (this repo is public). The bucket, endpoint
+# and keys come from the machine's 1Password item, by way of rbackup.env.
+version = "1"
+
+[global]
+  priority = "low"
+  restic-lock-retry-after = "1m"
+  restic-stale-lock-age = "2h"
+  min-memory = 200
+
+[home]
+  description = "Home directory to Backblaze B2 (@@ID@@)"
+  env-file = ["@@CONF@@/rbackup.env"]
+  password-file = "@@CONF@@/password"
+  lock = "@@CONF@@/home.lock"
+  # The install ID, never the live hostname: restic's --host on every
+  # command that writes or filters by host. (VERIFY: does a profile-level
+  # `host` reach snapshots/dump? Set per section below to be safe.)
+  host = "@@ID@@"
+
+  [home.backup]
+    source = ["@@HOME@@"]
+    host = "@@ID@@"
+    tag = ["rbackup"]
+    one-file-system = true
+    exclude-caches = true
+    exclude-file = ["@@RBACKUP@@/excludes/common.txt", "@@RBACKUP@@/excludes/@@OS@@.txt"]
+    exclude = ["@@CONF@@"]
+    # iCloud's Optimize Storage bumps ctime when it downloads or evicts a
+    # file; without this every eviction makes restic re-read (and so
+    # re-download) it. Edits still change mtime, so only a permission-only
+    # change waits for the next content change.
+    ignore-ctime = true
+    # No empty snapshot every hour when nothing changed (restic 0.17+).
+    skip-if-unchanged = true
+    # restic exit 3 = snapshot saved, some files unreadable. Count it as a
+    # backup; the canary restore (rbackup restore-test) catches real gaps.
+    no-error-on-warning = true
+    # Housekeeping only: a failure here must never block the backup.
+    run-before = ["RBACKUP_CONF='@@CONF@@' '@@RBACKUP@@/bin/rbackup' rotate-logs || true"]
+    schedule = "hourly"
+    schedule-permission = "user"
+    schedule-priority = "background"
+    schedule-lock-wait = "15m"
+    schedule-ignore-on-battery-less-than = 20
+    schedule-after-network-online = true
+    schedule-log = "@@LOGS@@/backup.log"
+
+  # Weekly: retention (same policy as the old script) then prune. One repo
+  # per install, so each install maintains its own and nothing contends.
+  [home.forget]
+    host = "@@ID@@"
+    tag = ["rbackup"]
+    keep-within-daily = "7d"
+    keep-within-weekly = "1m"
+    keep-within-monthly = "1y"
+    keep-within-yearly = "100y"
+    prune = true
+    schedule = "Sun 03:00"
+    schedule-permission = "user"
+    schedule-priority = "background"
+    schedule-lock-wait = "1h"
+    schedule-log = "@@LOGS@@/forget.log"
+
+  # Weekly: read back 1 GiB of pack data, then restore the canary file and
+  # compare it. B2 egress is free up to 3x stored data, so this stays free.
+  [home.check]
+    read-data-subset = "1G"
+    run-after = ["RBACKUP_CONF='@@CONF@@' '@@RBACKUP@@/bin/rbackup' restore-test"]
+    schedule = "Sun 05:00"
+    schedule-permission = "user"
+    schedule-priority = "background"
+    schedule-lock-wait = "1h"
+    schedule-log = "@@LOGS@@/check.log"
+@@HEALTHCHECK@@

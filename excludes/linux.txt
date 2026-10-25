@@ -1,0 +1,34 @@
+# Linux home excludes (on top of common.txt).
+
+# Dropbox (and the vault in it) is already synced; same as macOS, where it
+# sits under ~/Library. See the README for the install that backs it up.
+$HOME/Dropbox
+$HOME/.dropbox
+$HOME/.dropbox-dist
+$HOME/Downloads
+
+# Caches, trash, thumbnails
+$HOME/.cache
+$HOME/.local/share/Trash
+$HOME/.thumbnails
+$HOME/.var/app/*/cache
+
+# Games: reinstallable, and huge
+$HOME/.steam
+$HOME/.local/share/Steam
+
+# Reinstallable toolchains
+$HOME/.npm
+$HOME/.cargo/registry
+$HOME/.rustup
+$HOME/go/pkg/mod
+$HOME/.m2/repository
+$HOME/.local/share/mise/installs
+$HOME/.local/share/mise/downloads
+$HOME/.local/share/omarchy-custom/backups
+
+# Container and VM storage
+$HOME/.local/share/containers
+$HOME/.local/share/libvirt/images
+$HOME/.docker
+$HOME/snap

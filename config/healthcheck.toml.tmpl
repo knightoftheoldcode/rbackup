@@ -1,0 +1,17 @@
+
+  # Healthcheck pings (rendered only when the 1Password item has a
+  # healthcheck-url). A missed /start or success ping after the check's
+  # grace period is the alert. The failure ping carries the exit code only:
+  # stderr has file paths, which shouldn't go to a third party.
+  [[home.backup.send-before]]
+    method = "HEAD"
+    url = "@@HC_URL@@/start"
+
+  [[home.backup.send-after]]
+    method = "HEAD"
+    url = "@@HC_URL@@"
+
+  [[home.backup.send-after-fail]]
+    method = "POST"
+    url = "@@HC_URL@@/fail"
+    body = "backup failed on @@ID@@, exit ${ERROR_EXIT_CODE}"
