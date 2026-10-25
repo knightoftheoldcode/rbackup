@@ -42,6 +42,8 @@ Usually run by the OS setup repo (`setup-backup`), which installs the tools firs
    rbackup doctor
    ```
 
+Setup links `rbackup` into `~/.local/bin`. If that directory isn't on your login shell's PATH (stock macOS), it adds one marked line to `~/.zprofile` (zsh) or `~/.bash_profile` / `~/.profile` (bash).
+
 On macOS, give `/opt/homebrew/bin/resticprofile` (and `restic`) Full Disk Access in System Settings > Privacy & Security, or the scheduled jobs silently skip protected folders. `rbackup doctor` catches it through the canary restore.
 
 ## Everyday use
