@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: shellcheck bin/rbackup bin/rbackup-setup
+
+  validate-config:
+    runs-on: ubuntu-latest
+    env:
+      RESTICPROFILE_VERSION: 0.33.1
+    steps:
+      - uses: actions/checkout@v4
+      - name: install resticprofile
+        run: |
+          curl -fsSL -o resticprofile.tar.gz \
+            "https://github.com/creativeprojects/resticprofile/releases/download/v${RESTICPROFILE_VERSION}/resticprofile_${RESTICPROFILE_VERSION}_linux_amd64.tar.gz"
+          tar -xzf resticprofile.tar.gz resticprofile
+          sudo install resticprofile /usr/local/bin/resticprofile
+      - name: render and validate config/*.toml.tmpl
+        run: |
+          # Mirrors bin/rbackup-setup's render(), with placeholder values
+          # standing in for what setup fills in from the install and 1Password.
+          render() {
+            sed -e "s|@@ID@@|test-id|g" -e "s|@@HOME@@|/home/test|g" \
+              -e "s|@@CONF@@|$RUNNER_TEMP/conf|g" -e "s|@@RBACKUP@@|$PWD|g" \
+              -e "s|@@OS@@|$1|g" -e "s|@@LOGS@@|$RUNNER_TEMP/logs|g" \
+              -e "s|@@HC_URL@@|https://hc-ping.com/test|g" "$2"
+          }
+          for os in macos linux; do
+            for hc in with without; do
+              profile=$(render "$os" config/profiles.toml.tmpl)
+              healthcheck=""
+              [[ $hc == with ]] && healthcheck=$(render "$os" config/healthcheck.toml.tmpl)
+              rendered="${profile//@@HEALTHCHECK@@/$healthcheck}"
+              out="$RUNNER_TEMP/profiles-$os-$hc.toml"
+              printf '%s\n' "$rendered" >"$out"
+              echo "--- $os / healthcheck $hc ---"
+              resticprofile --config "$out" --name home show
+            done
+          done
+        shell: bash
