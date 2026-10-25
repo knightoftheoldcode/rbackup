@@ -1,0 +1,194 @@
+#!/bin/bash
+# Set up rbackup on this install (macOS or Linux). Called by each OS custom
+# repo's setup-backup, which installs restic, resticprofile, jq and the
+# 1Password CLI first and passes the install ID.
+#
+#   rbackup-setup --id <install-id> --op-vault <1Password vault>
+#
+#   - reads the 1Password item "rbackup <install-id>" (op asks for Touch ID
+#     or the system password once); scheduled runs never touch 1Password,
+#     they only read the files below
+#   - generates the repo password inside 1Password when the item has none,
+#     and reads it back before going on: a password that only exists on
+#     this machine makes the backup useless the day the machine dies
+#   - writes ~/.config/rbackup/ (mode 700, files 600): rbackup.env
+#     (repository, B2 key, healthcheck URL), password, setup.env, and
+#     profiles.toml rendered from config/profiles.toml.tmpl
+#   - links rbackup into ~/.local/bin and, if that isn't on the login
+#     shell's PATH, adds it to the shell's profile (~/.zprofile for zsh)
+#   - writes the canary file restore-test looks for, initializes the repo if
+#     it doesn't exist yet, and, once the first snapshot exists, schedules
+#     backup (hourly), forget + prune and check (weekly)
+#
+# 1Password item fields: repository (s3:https://s3.<region>.backblazeb2.com/
+# <bucket>/<install-id>), key-id, app-key, password (generated here if
+# missing), healthcheck-url (optional).
+#
+# Safe to run any number of times: files are rewritten only when they
+# differ, an existing repo is never re-initialized, and the canary is kept.
+set -euo pipefail
+
+RBACKUP="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
+CONF="${RBACKUP_CONF:-$HOME/.config/rbackup}"
+
+id="" vault=""
+while (($#)); do
+  case $1 in
+    --id) id=$2; shift 2 ;;
+    --op-vault) vault=$2; shift 2 ;;
+    *) echo "rbackup-setup: unknown argument $1" >&2; exit 2 ;;
+  esac
+done
+[[ -n $id && -n $vault ]] || { echo "usage: rbackup-setup --id <install-id> --op-vault <vault>" >&2; exit 2; }
+
+for cmd in restic resticprofile jq op curl openssl; do
+  command -v "$cmd" &>/dev/null || { echo "rbackup-setup: $cmd not found" >&2; exit 1; }
+done
+
+case "$(uname -s)" in
+  Darwin) os=macos; logs="$HOME/Library/Logs/rbackup" ;;
+  Linux) os=linux; logs="${XDG_STATE_HOME:-$HOME/.local/state}/rbackup" ;;
+  *) echo "rbackup-setup: unsupported OS $(uname -s)" >&2; exit 1 ;;
+esac
+# ~/Documents on purpose: on macOS it's privacy-protected (TCC), so a backup
+# job that lost its Full Disk Access fails the restore test instead of
+# silently skipping the folder.
+canary="$HOME/Documents/.rbackup-canary"
+
+umask 077
+mkdir -p "$CONF" "$logs" "$(dirname "$canary")"
+chmod 700 "$CONF"
+
+# write <file> <content>: replace only when different, print what changed.
+write() {
+  # Compare without trailing newlines on either side, as $(cat) drops them.
+  local content
+  content=$(printf '%s' "$2")
+  if [[ ! -f $1 ]] || [[ "$(cat "$1")" != "$content" ]]; then
+    printf '%s\n' "$content" >"$1"
+    chmod 600 "$1"
+    echo "rbackup-setup: wrote $1"
+  fi
+}
+
+# --- 1Password --------------------------------------------------------------
+item="rbackup $id"
+field() { op read "op://$vault/$item/$1" 2>/dev/null; }
+
+if ! out=$(op vault list 2>&1 >/dev/null); then
+  echo "rbackup-setup: the 1Password CLI can't reach your account: ${out%%$'\n'*}" >&2
+  echo "rbackup-setup: turn on 1Password > Settings > Developer > \"Integrate with 1Password CLI\", then re-run" >&2
+  exit 1
+fi
+
+op item get "$item" --vault "$vault" >/dev/null ||
+  { echo "rbackup-setup: no 1Password item \"$item\" in vault \"$vault\" (see rbackup's README)" >&2; exit 1; }
+
+repository=$(field repository) || { echo "rbackup-setup: \"$item\" has no repository field" >&2; exit 1; }
+key_id=$(field key-id) || { echo "rbackup-setup: \"$item\" has no key-id field" >&2; exit 1; }
+app_key=$(field app-key) || { echo "rbackup-setup: \"$item\" has no app-key field" >&2; exit 1; }
+hc_url=$(field healthcheck-url || true)
+
+# restic itself, with this install's repository and B2 key. Exit codes
+# (restic 0.17+): 10 = no repository there, 12 = wrong password.
+r() (
+  export RESTIC_REPOSITORY="$repository" AWS_ACCESS_KEY_ID="$key_id" AWS_SECRET_ACCESS_KEY="$app_key"
+  restic --no-lock "$@"
+)
+repo_status() {
+  local s=0
+  RESTIC_PASSWORD="$1" r cat config >/dev/null 2>&1 || s=$?
+  echo "$s"
+}
+
+if ! password=$(field password) || [[ -z $password ]]; then
+  # Generate only for a brand-new install: no local password and no repo
+  # yet. Anything else means the item's field is missing or misnamed, and a
+  # new password would lock this machine out of its own backups.
+  if [[ -f $CONF/password ]]; then
+    echo "rbackup-setup: \"$item\" has no readable password, but $CONF/password exists; fix the item (field \"password\"), don't regenerate" >&2
+    exit 1
+  fi
+  status=$(repo_status "rbackup-setup-probe")
+  if [[ $status != 10 ]]; then
+    echo "rbackup-setup: a repository already exists at the item's repository (restic exit $status) but the item has no password; not generating one" >&2
+    exit 1
+  fi
+  # Generated by 1Password itself, so the password never sits in argv.
+  op item edit "$item" --vault "$vault" --generate-password='letters,digits,symbols,48' >/dev/null
+  password=$(field password) ||
+    { echo "rbackup-setup: generated a password but can't read it back; not going on" >&2; exit 1; }
+  [[ -n $password ]] || { echo "rbackup-setup: empty password after generating; not going on" >&2; exit 1; }
+  echo "rbackup-setup: generated the repo password in 1Password (\"$item\")"
+fi
+
+write "$CONF/password" "$password"
+write "$CONF/rbackup.env" "RESTIC_REPOSITORY=$repository
+AWS_ACCESS_KEY_ID=$key_id
+AWS_SECRET_ACCESS_KEY=$app_key
+RBACKUP_HC_URL=$hc_url"
+write "$CONF/setup.env" "RBACKUP_ID=$id
+RBACKUP_LOGS=$logs
+RBACKUP_CANARY=$canary"
+
+# --- profiles.toml ----------------------------------------------------------
+render() {
+  sed -e "s|@@ID@@|$id|g" -e "s|@@HOME@@|$HOME|g" -e "s|@@CONF@@|$CONF|g" \
+    -e "s|@@RBACKUP@@|$RBACKUP|g" -e "s|@@OS@@|$os|g" -e "s|@@LOGS@@|$logs|g" \
+    -e "s|@@HC_URL@@|$hc_url|g" "$1"
+}
+profile=$(render "$RBACKUP/config/profiles.toml.tmpl")
+hc=""
+[[ -n $hc_url ]] && hc=$(render "$RBACKUP/config/healthcheck.toml.tmpl")
+write "$CONF/profiles.toml" "${profile//@@HEALTHCHECK@@/$hc}"
+
+# --- rbackup on PATH -------------------------------------------------------
+# Link the wrapper into ~/.local/bin, and put that directory on the login
+# shell's PATH when it isn't already (Omarchy has it; macOS doesn't). The
+# check runs the user's own login shell, since setup may run from a tool
+# with a different PATH.
+bin_dir="$HOME/.local/bin"
+mkdir -p "$bin_dir"
+if [[ $(readlink "$bin_dir/rbackup" 2>/dev/null) != "$RBACKUP/bin/rbackup" ]]; then
+  ln -sfn "$RBACKUP/bin/rbackup" "$bin_dir/rbackup"
+  echo "rbackup-setup: linked $bin_dir/rbackup"
+fi
+login_shell=${SHELL:-/bin/bash}
+# shellcheck disable=SC2016 # the login shell expands $PATH, not this one
+if ! "$login_shell" -lic 'echo "$PATH"' 2>/dev/null </dev/null | tr ':' '\n' | grep -qx "$bin_dir"; then
+  case $(basename "$login_shell") in
+    zsh) shell_profile="$HOME/.zprofile" ;;
+    bash) shell_profile="$HOME/.bash_profile"; [[ -f $shell_profile ]] || shell_profile="$HOME/.profile" ;;
+    *) shell_profile="$HOME/.profile" ;;
+  esac
+  # shellcheck disable=SC2016 # $HOME and $PATH expand in the profile, not here
+  path_line='export PATH="$HOME/.local/bin:$PATH"  # added by rbackup-setup'
+  if ! grep -qF "$path_line" "$shell_profile" 2>/dev/null; then
+    printf '\n%s\n' "$path_line" >>"$shell_profile"
+    echo "rbackup-setup: added ~/.local/bin to PATH in $shell_profile (applies to new shells)"
+  fi
+fi
+
+# --- canary, repo, schedules ------------------------------------------------
+if [[ ! -s $canary ]]; then
+  printf 'rbackup canary for %s, written %s: %s\n' "$id" "$(date '+%Y-%m-%d')" "$(openssl rand -hex 16)" >"$canary"
+  echo "rbackup-setup: wrote canary $canary"
+fi
+
+export RESTIC_PASSWORD_FILE="$CONF/password"
+status=$(repo_status "$password")
+case $status in
+  0) echo "rbackup-setup: repository is reachable" ;;
+  10) r init >/dev/null && echo "rbackup-setup: initialized the repository" ;;
+  12) echo "rbackup-setup: the repository exists but rejects the password from \"$item\"" >&2; exit 1 ;;
+  *) echo "rbackup-setup: can't open the repository (restic exit $status); check the B2 key and repository field" >&2; exit 1 ;;
+esac
+
+# Schedule only once the first (long) snapshot exists, so hourly jobs don't
+# pile up behind it and fail their pings.
+if [[ $(r snapshots --host "$id" --latest 1 --json | jq length) == 0 ]]; then
+  echo "rbackup-setup: no snapshot yet; run \`rbackup backup\` once, then re-run setup to schedule"
+  exit 0
+fi
+resticprofile --config "$CONF/profiles.toml" --name home schedule
+echo "rbackup-setup: scheduled backup (hourly), forget + prune and check (weekly); \`rbackup doctor\` checks it all"

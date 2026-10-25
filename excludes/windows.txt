@@ -1,0 +1,14 @@
+# Windows home excludes (on top of common.txt). SKETCH: restic's pattern
+# matching with Windows paths needs testing before this is trusted.
+
+$USERPROFILE/AppData
+$USERPROFILE/Downloads
+$USERPROFILE/Dropbox
+$USERPROFILE/OneDrive
+$USERPROFILE/.cache
+$USERPROFILE/.npm
+$USERPROFILE/.cargo/registry
+$USERPROFILE/.rustup
+$USERPROFILE/.local/share/windows-custom/backups
+$USERPROFILE/NTUSER.DAT*
+$USERPROFILE/ntuser.dat*
