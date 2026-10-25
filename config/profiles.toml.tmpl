@@ -20,8 +20,7 @@ version = "1"
   password-file = "@@CONF@@/password"
   lock = "@@CONF@@/home.lock"
   # The install ID, never the live hostname: restic's --host on every
-  # command that writes or filters by host. (VERIFY: does a profile-level
-  # `host` reach snapshots/dump? Set per section below to be safe.)
+  # command that writes or filters by host.
   host = "@@ID@@"
 
   [home.backup]
