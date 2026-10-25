@@ -169,6 +169,21 @@ if ! "$login_shell" -lic 'echo "$PATH"' 2>/dev/null </dev/null | tr ':' '\n' | g
   fi
 fi
 
+# --- systemd lingering (Linux) ----------------------------------------------
+# schedule-permission = "user" below makes resticprofile install systemd
+# *user* units, which stop firing the moment nobody is logged in unless
+# lingering is enabled. Without this a headless install looks fully
+# scheduled (`rbackup doctor` shows the timers) and then silently stops.
+if [[ $os == linux ]] && command -v loginctl &>/dev/null; then
+  if [[ $(loginctl show-user "$(id -u)" --value --property=Linger 2>/dev/null) != yes ]]; then
+    if loginctl enable-linger "$USER" 2>/dev/null; then
+      echo "rbackup-setup: enabled systemd lingering for $USER (scheduled jobs survive logout)"
+    else
+      echo "rbackup-setup: couldn't enable lingering for $USER; run 'sudo loginctl enable-linger $USER' yourself, or scheduled jobs will stop once nobody's logged in" >&2
+    fi
+  fi
+fi
+
 # --- canary, repo, schedules ------------------------------------------------
 if [[ ! -s $canary ]]; then
   printf 'rbackup canary for %s, written %s: %s\n' "$id" "$(date '+%Y-%m-%d')" "$(openssl rand -hex 16)" >"$canary"

@@ -46,6 +46,8 @@ Setup links `rbackup` into `~/.local/bin`. If that directory isn't on your login
 
 On macOS, give `/opt/homebrew/bin/resticprofile` (and `restic`) Full Disk Access in System Settings > Privacy & Security, or the scheduled jobs silently skip protected folders. `rbackup doctor` catches it through the canary restore.
 
+On Linux, setup enables lingering (`loginctl enable-linger`) so the systemd user units it schedules keep running after you log out; without it a headless install looks fully scheduled but stops the moment nobody's logged in.
+
 ## Everyday use
 
 ```bash
