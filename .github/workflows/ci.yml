@@ -46,13 +46,16 @@ jobs:
             sed -e "s|@@ID@@|test-id|g" -e "s|@@HOME@@|/home/test|g" \
               -e "s|@@CONF@@|$RUNNER_TEMP/conf|g" -e "s|@@RBACKUP@@|$PWD|g" \
               -e "s|@@OS@@|$1|g" -e "s|@@LOGS@@|$RUNNER_TEMP/logs|g" \
+              -e "s|@@SCHEDULE_PERMISSION@@|$3|g" -e "s|@@AFTER_NETWORK_ONLINE@@|$4|g" \
               -e "s|@@HC_URL@@|https://hc-ping.com/test|g" "$2"
           }
           for os in macos linux; do
+            permission=user after_network=true
+            [[ $os == linux ]] && permission=user_logged_on after_network=false
             for hc in with without; do
-              profile=$(render "$os" config/profiles.toml.tmpl)
+              profile=$(render "$os" config/profiles.toml.tmpl "$permission" "$after_network")
               healthcheck=""
-              [[ $hc == with ]] && healthcheck=$(render "$os" config/healthcheck.toml.tmpl)
+              [[ $hc == with ]] && healthcheck=$(render "$os" config/healthcheck.toml.tmpl "$permission" "$after_network")
               rendered="${profile//@@HEALTHCHECK@@/$healthcheck}"
               out="$RUNNER_TEMP/profiles-$os-$hc.toml"
               printf '%s\n' "$rendered" >"$out"
