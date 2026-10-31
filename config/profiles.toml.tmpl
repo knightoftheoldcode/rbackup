@@ -44,11 +44,11 @@ version = "1"
     # Housekeeping only: a failure here must never block the backup.
     run-before = ["RBACKUP_CONF='@@CONF@@' '@@RBACKUP@@/bin/rbackup' rotate-logs || true"]
     schedule = "hourly"
-    schedule-permission = "user"
+    schedule-permission = "@@SCHEDULE_PERMISSION@@"
     schedule-priority = "background"
     schedule-lock-wait = "15m"
     schedule-ignore-on-battery-less-than = 20
-    schedule-after-network-online = true
+    schedule-after-network-online = @@AFTER_NETWORK_ONLINE@@
     schedule-log = "@@LOGS@@/backup.log"
 
   # Weekly: retention (same policy as the old script) then prune. One repo
@@ -62,7 +62,7 @@ version = "1"
     keep-within-yearly = "100y"
     prune = true
     schedule = "Sun 03:00"
-    schedule-permission = "user"
+    schedule-permission = "@@SCHEDULE_PERMISSION@@"
     schedule-priority = "background"
     schedule-lock-wait = "1h"
     schedule-log = "@@LOGS@@/forget.log"
@@ -73,7 +73,7 @@ version = "1"
     read-data-subset = "1G"
     run-after = ["RBACKUP_CONF='@@CONF@@' '@@RBACKUP@@/bin/rbackup' restore-test"]
     schedule = "Sun 05:00"
-    schedule-permission = "user"
+    schedule-permission = "@@SCHEDULE_PERMISSION@@"
     schedule-priority = "background"
     schedule-lock-wait = "1h"
     schedule-log = "@@LOGS@@/check.log"
