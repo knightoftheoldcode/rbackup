@@ -46,8 +46,11 @@ for cmd in restic resticprofile jq op curl openssl; do
 done
 
 case "$(uname -s)" in
-  Darwin) os=macos; logs="$HOME/Library/Logs/rbackup" ;;
-  Linux) os=linux; logs="${XDG_STATE_HOME:-$HOME/.local/state}/rbackup" ;;
+  # "user" on Linux means a system unit, which needs root; "user_logged_on"
+  # is a systemd user unit, and lingering keeps it running while logged out.
+  # resticprofile refuses after-network-online on those units.
+  Darwin) os=macos; logs="$HOME/Library/Logs/rbackup"; schedule_permission=user after_network_online=true ;;
+  Linux) os=linux; logs="${XDG_STATE_HOME:-$HOME/.local/state}/rbackup"; schedule_permission=user_logged_on after_network_online=false ;;
   *) echo "rbackup-setup: unsupported OS $(uname -s)" >&2; exit 1 ;;
 esac
 # ~/Documents on purpose: on macOS it's privacy-protected (TCC), so a backup
@@ -135,6 +138,7 @@ RBACKUP_CANARY=$canary"
 render() {
   sed -e "s|@@ID@@|$id|g" -e "s|@@HOME@@|$HOME|g" -e "s|@@CONF@@|$CONF|g" \
     -e "s|@@RBACKUP@@|$RBACKUP|g" -e "s|@@OS@@|$os|g" -e "s|@@LOGS@@|$logs|g" \
+    -e "s|@@SCHEDULE_PERMISSION@@|$schedule_permission|g" -e "s|@@AFTER_NETWORK_ONLINE@@|$after_network_online|g" \
     -e "s|@@HC_URL@@|$hc_url|g" "$1"
 }
 profile=$(render "$RBACKUP/config/profiles.toml.tmpl")
