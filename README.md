@@ -46,6 +46,8 @@ Setup links `rbackup` into `~/.local/bin`. If that directory isn't on your login
 
 On macOS, give `/opt/homebrew/bin/resticprofile` (and `restic`) Full Disk Access in System Settings > Privacy & Security, or the scheduled jobs silently skip protected folders. `rbackup doctor` catches it through the canary restore.
 
+On macOS the scheduled jobs are LaunchAgents in the login session, so they run while you're logged in and launchd loads them again after a restart. Setups from before this ran them in the background session, which macOS doesn't reload after a restart: re-run setup once to move them. `rbackup doctor` reports any job launchd hasn't loaded.
+
 ## Everyday use
 
 ```bash

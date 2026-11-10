@@ -50,8 +50,8 @@ jobs:
               -e "s|@@HC_URL@@|https://hc-ping.com/test|g" "$2"
           }
           for os in macos linux; do
-            permission=user after_network=true
-            [[ $os == linux ]] && permission=user_logged_on after_network=false
+            permission=user_logged_on after_network=true
+            [[ $os == linux ]] && after_network=false
             for hc in with without; do
               profile=$(render "$os" config/profiles.toml.tmpl "$permission" "$after_network")
               healthcheck=""
