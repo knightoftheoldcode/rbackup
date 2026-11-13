@@ -86,6 +86,15 @@ doctor() {
   out=$(rp status 2>&1) || ok=1
   printf '%s\n' "$out"
   grep -q "no scheduled jobs found" <<<"$out" && { echo "  schedules: none (re-run setup-backup)"; ok=1; }
+  # A plist on disk isn't enough: after a restart launchd may not have
+  # loaded it, and nothing runs. Ask launchd for each job directly.
+  if [[ $(uname -s) == Darwin ]]; then
+    local job
+    for job in backup forget check; do
+      launchctl print "gui/$(id -u)/local.resticprofile.home.$job" &>/dev/null ||
+        { echo "  $job job: not loaded in launchd (re-run setup-backup)"; ok=1; }
+    done
+  fi
   age=$(snapshot_age)
   if [[ -z $age ]]; then
     echo "  latest snapshot: none"; ok=1
