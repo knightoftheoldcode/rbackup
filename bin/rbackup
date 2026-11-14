@@ -5,6 +5,8 @@
 #   rbackup restore-test    restore the canary file from the latest snapshot
 #                           and compare it (run weekly after `check`)
 #   rbackup rotate-logs     keep each log under 5 MB (run before each backup)
+#   rbackup summary         last N scheduled runs per job, parsed from the
+#                           schedule-log files (backup/check/forget)
 #   rbackup <anything else> passed to resticprofile, e.g. `rbackup snapshots`,
 #                           `rbackup backup`, `rbackup mount ~/mnt`
 #
@@ -79,6 +81,159 @@ rotate_logs() {
   done
 }
 
+# YYYY/MM/DD HH:MM:SS (resticprofile's log timestamp) -> epoch seconds.
+# Always exits 0 (prints nothing on failure) so callers under `set -e` don't
+# need to guard every call.
+to_epoch() {
+  local iso=${1//\//-}
+  date -j -f "%Y-%m-%d %H:%M:%S" "$iso" +%s 2>/dev/null || date -d "$iso" +%s 2>/dev/null || true
+}
+
+# Seconds -> compact "1d4h" / "3h12m" / "42m" / "9s".
+fmt_dur() {
+  local s=$1
+  if ((s >= 86400)); then printf '%dd%dh' "$((s / 86400))" "$(((s % 86400) / 3600))"
+  elif ((s >= 3600)); then printf '%dh%dm' "$((s / 3600))" "$(((s % 3600) / 60))"
+  elif ((s >= 60)); then printf '%dm' "$((s / 60))"
+  else printf '%ds' "$s"
+  fi
+}
+
+# Parses one job's schedule-log into one row per run (newest first): start,
+# end, status, restic's own duration (backup only), files new/changed, data
+# added, snapshot id, snapshots removed, repo size remaining, restore-test
+# result, and a free-text detail (e.g. a lock contention). A run still open
+# at EOF, or one a later "starting" line clobbers without a "finished"/ERROR
+# in between, is reported as "interrupted".
+summary_job() {
+  local job=$1 count=$2 rows n=0
+  local log="$RBACKUP_LOGS/$job.log"
+  # rotate_logs (run-before, every backup) renames $log to $log.1 past 5 MB
+  # and starts a fresh $log; read both, oldest first, or history silently
+  # stops at the last rotation.
+  local logs=()
+  [[ -f "$log.1" ]] && logs+=("$log.1")
+  [[ -f "$log" ]] && logs+=("$log")
+  echo "== $job ($log) =="
+  if ((${#logs[@]} == 0)); then
+    echo "  no log yet"
+    return 0
+  fi
+
+  rows=$(awk '
+    # A run has two phases: "active" (between starting and finished/ERROR,
+    # where the job body lines live) and, once finished, a trailing window
+    # (still "have", not "active") where run-after output like the
+    # restore-test line lands in the log before the next run starts.
+    # Emission is deferred to the next "starting" line (or EOF) so that
+    # trailing output has a chance to attach to the record it belongs to.
+    function reset() {
+      start = "-"; end = "-"; stat = "-"; procdur = "-"; fn = "-"; fc = "-"
+      added = "-"; stored = "-"; snap = "-"; removed = "-"; remaining = "-"
+      restore = "-"; detail = "-"; active = 0; have = 0
+    }
+    function emit() {
+      print start "\t" end "\t" stat "\t" procdur "\t" fn "\t" fc "\t" \
+        added "\t" stored "\t" snap "\t" removed "\t" remaining "\t" \
+        restore "\t" detail
+    }
+    BEGIN { reset() }
+    $3 == "INFO" && $4 == "profile" && $6 == "starting" {
+      if (have) { if (stat == "-") stat = "interrupted"; emit() }
+      reset(); start = $1 " " $2; active = 1; have = 1; next
+    }
+    !have { next }
+    active && $3 == "INFO" && $4 == "profile" && $6 == "finished" {
+      stat = "ok"; end = $1 " " $2; active = 0; next
+    }
+    active && $3 == "ERROR" {
+      stat = "error:" $NF; end = $1 " " $2; active = 0; next
+    }
+    active && /unable to create lock/ { detail = "locked" }
+    active && $1 == "Files:" { fn = $2; fc = $4 }
+    active && /^Added to the repository: / {
+      line = $0
+      sub(/^Added to the repository: /, "", line)
+      split(line, parts, " \\(")
+      added = parts[1]; stored = parts[2]
+      sub(/ stored\)$/, "", stored)
+    }
+    active && /^processed / {
+      line = $0
+      sub(/^processed /, "", line)
+      split(line, parts, " files, ")
+      split(parts[2], parts2, " in ")
+      procdur = parts2[2]
+    }
+    active && $1 == "snapshot" && $3 == "saved" { snap = $2 }
+    active && /snapshots have been removed/ { removed = $1 }
+    active && $1 == "remaining:" {
+      line = $0
+      sub(/^remaining:[ ]*/, "", line)
+      split(line, parts, "/")
+      sz = parts[2]; sub(/^[ ]*/, "", sz)
+      remaining = sz
+    }
+    active && $0 == "no errors were found" { if (detail == "-") detail = "clean" }
+    /^rbackup: restore-test ok/ { restore = "ok" }
+    /^rbackup: restore-test FAILED/ { restore = "FAILED" }
+    END { if (have) { if (stat == "-") stat = "interrupted"; emit() } }
+  ' "${logs[@]}" | tail -n "$count" | awk '{ a[NR] = $0 } END { for (i = NR; i > 0; i--) print a[i] }')
+
+  if [[ -z $rows ]]; then
+    echo "  no completed runs logged yet"
+    return 0
+  fi
+
+  while IFS=$'\t' read -r start end stat procdur fn fc added stored snap removed remaining restore detail; do
+    n=$((n + 1))
+    local dur="$procdur" note=""
+    if [[ $end != "-" ]]; then
+      local se ee
+      se=$(to_epoch "$start")
+      ee=$(to_epoch "$end")
+      if [[ -n $se && -n $ee ]]; then
+        local wall=$((ee - se))
+        [[ $dur == "-" ]] && dur=$(fmt_dur "$wall")
+        if [[ $procdur != "-" ]]; then
+          # restic's own time (M:SS, or H:MM:SS past an hour) vs
+          # resticprofile's wall clock: a big gap means the process stalled
+          # (asleep, no network) in between.
+          local psecs=0 part
+          for part in ${procdur//:/ }; do psecs=$((psecs * 60 + 10#$part)); done
+          ((wall > psecs + 3600)) &&
+            note=" -- restic itself took $procdur; resticprofile didn't log 'finished' for $(fmt_dur "$wall")"
+        fi
+      fi
+    fi
+    [[ $dur == "-" ]] && dur="?"
+    printf '  %-20s %-12s %-7s' "$start" "$stat" "$dur"
+    case $job in
+      backup) printf ' files %s/%-6s added %s (%s stored) snap %s' "$fn" "$fc" "$added" "$stored" "$snap" ;;
+      forget) printf ' removed %-6s remaining %s' "$removed" "$remaining" ;;
+      check) printf ' restore-test %s' "$restore" ;;
+    esac
+    [[ $detail != "-" && $detail != "clean" ]] && printf ' (%s)' "$detail"
+    printf '%s\n' "$note"
+  done <<<"$rows"
+}
+
+summary() {
+  local count=5 jobs=() j
+  while (($#)); do
+    case "$1" in
+      --count) count=$2; shift 2 ;;
+      --count=*) count=${1#*=}; shift ;;
+      backup | check | forget) jobs+=("$1"); shift ;;
+      *) echo "rbackup summary: unknown argument: $1 (want backup/check/forget and/or --count N)" >&2; return 1 ;;
+    esac
+  done
+  ((${#jobs[@]})) || jobs=(backup check forget)
+  for j in "${jobs[@]}"; do
+    summary_job "$j" "$count"
+  done
+}
+
 doctor() {
   local ok=0 age out
   echo "rbackup doctor: $RBACKUP_ID"
@@ -103,6 +258,7 @@ case "${1:-}" in
   doctor) doctor ;;
   restore-test) restore_test ;;
   rotate-logs) rotate_logs ;;
+  summary) shift; summary "$@" ;;
   "") sed -n '2,10s/^# \{0,1\}//p' "${BASH_SOURCE[0]}" ;;
   *) rp "$@" ;;
 esac

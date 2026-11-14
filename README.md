@@ -15,7 +15,7 @@ Part of the DevLab. Read more at [Knight of the Old Code](https://knightoftheold
 ## Layout
 
 ```
-bin/rbackup             wrapper: doctor, restore-test, rotate-logs, or any resticprofile command
+bin/rbackup             wrapper: doctor, restore-test, rotate-logs, summary, or any resticprofile command
 bin/rbackup-setup       one-time / idempotent setup for an install (macOS and Linux)
 config/*.toml.tmpl      resticprofile config, rendered per machine by rbackup-setup
 excludes/*.txt          restic exclude files: common.txt plus one per OS
@@ -51,9 +51,13 @@ On macOS, give `/opt/homebrew/bin/resticprofile` (and `restic`) Full Disk Access
 ```bash
 rbackup snapshots                  # list this install's snapshots
 rbackup doctor                     # schedules, latest snapshot age, canary restore
+rbackup summary                    # last 5 scheduled runs per job (backup/check/forget)
+rbackup summary backup --count 20  # more history, one job only
 rbackup restore latest --target /tmp/restore --include /Users/me/Documents/file.txt
 rbackup mount ~/mnt                # browse snapshots (needs macFUSE / FUSE)
 ```
+
+`rbackup summary` reads the `schedule-log` files under `$RBACKUP_LOGS` (each job's own `backup.log`/`check.log`/`forget.log`, plus the rotated `.1` from `rotate-logs`), not the repository itself, so it only ever sees *scheduled* runs (the ones launchd/systemd triggered) — a manual `rbackup backup` from a terminal doesn't go through `schedule-log` and won't show up. Each row is a start time, status, duration, and job-specific stats (files new/changed and data added for backups; snapshots removed and repo size remaining for forget; the restore-test result for check). When a job's wall-clock time runs far longer than restic's own reported duration, the row calls that out: the restic process itself finished quickly, but resticprofile didn't log that the job was done until much later, which points at a stall in between (asleep, no network, something else holding the lock) rather than a slow backup.
 
 Never run `resticprofile --dry-run schedule`: it creates the real scheduled jobs.
 
