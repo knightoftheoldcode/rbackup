@@ -185,6 +185,21 @@ summary_job() {
     return 0
   fi
 
+  # The header and every row share one format string per job, so a column
+  # can't drift out of alignment with its own label.
+  local common='  %-20s %-12s %-8s' fmt
+  case $job in
+    backup) fmt="$common"' %-5s %-5s %-13s %-13s %s' ;;
+    forget) fmt="$common"' %-8s %-10s' ;;
+    check) fmt="$common"' %-13s' ;;
+  esac
+  # shellcheck disable=SC2059 # $fmt is one of the three literals above, never data
+  case $job in
+    backup) printf "$fmt\n" START STATUS DURATION NEW CHG ADDED STORED SNAPSHOT ;;
+    forget) printf "$fmt\n" START STATUS DURATION REMOVED REMAINING ;;
+    check) printf "$fmt\n" START STATUS DURATION RESTORE-TEST ;;
+  esac
+
   while IFS=$'\t' read -r start end stat procdur fn fc added stored snap removed remaining restore detail; do
     n=$((n + 1))
     local dur="$procdur" note=""
@@ -207,11 +222,11 @@ summary_job() {
       fi
     fi
     [[ $dur == "-" ]] && dur="?"
-    printf '  %-20s %-12s %-7s' "$start" "$stat" "$dur"
+    # shellcheck disable=SC2059 # $fmt is one of the three literals above, never data
     case $job in
-      backup) printf ' files %s/%-6s added %s (%s stored) snap %s' "$fn" "$fc" "$added" "$stored" "$snap" ;;
-      forget) printf ' removed %-6s remaining %s' "$removed" "$remaining" ;;
-      check) printf ' restore-test %s' "$restore" ;;
+      backup) printf "$fmt" "$start" "$stat" "$dur" "$fn" "$fc" "$added" "$stored" "$snap" ;;
+      forget) printf "$fmt" "$start" "$stat" "$dur" "$removed" "$remaining" ;;
+      check) printf "$fmt" "$start" "$stat" "$dur" "$restore" ;;
     esac
     [[ $detail != "-" && $detail != "clean" ]] && printf ' (%s)' "$detail"
     printf '%s\n' "$note"
