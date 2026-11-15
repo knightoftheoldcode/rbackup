@@ -17,3 +17,8 @@ __pycache__
 # OS clutter
 .DS_Store
 Thumbs.db
+
+# Backblaze b2 CLI credentials: after a forgotten `b2 account clear` they'd
+# hold the master key, so they must never reach a snapshot.
+$HOME/.config/b2
+$HOME/.b2_account_info
