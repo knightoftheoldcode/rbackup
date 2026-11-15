@@ -46,10 +46,14 @@ for cmd in restic resticprofile jq op curl openssl; do
 done
 
 case "$(uname -s)" in
-  # "user" on Linux means a system unit, which needs root; "user_logged_on"
+  # "user_logged_on" everywhere. On macOS it's a LaunchAgent in the login
+  # (Aqua) session, gui/<uid>, which launchd loads again at every login;
+  # "user" puts it in the Background session, user/<uid>, which macOS doesn't
+  # reload after a restart, so backups stopped until the next setup run.
+  # On Linux "user" means a system unit, which needs root; "user_logged_on"
   # is a systemd user unit, and lingering keeps it running while logged out.
   # resticprofile refuses after-network-online on those units.
-  Darwin) os=macos; logs="$HOME/Library/Logs/rbackup"; schedule_permission=user after_network_online=true ;;
+  Darwin) os=macos; logs="$HOME/Library/Logs/rbackup"; schedule_permission=user_logged_on after_network_online=true ;;
   Linux) os=linux; logs="${XDG_STATE_HOME:-$HOME/.local/state}/rbackup"; schedule_permission=user_logged_on after_network_online=false ;;
   *) echo "rbackup-setup: unsupported OS $(uname -s)" >&2; exit 1 ;;
 esac
@@ -193,6 +197,15 @@ esac
 if [[ $(r snapshots --host "$id" --latest 1 --json | jq length) == 0 ]]; then
   echo "rbackup-setup: no snapshot yet; run \`rbackup backup\` once, then re-run setup to schedule"
   exit 0
+fi
+# Jobs scheduled before the move to the login session are still loaded in
+# user/<uid> until a restart, and resticprofile only replaces jobs in the
+# domain it's scheduling into, so boot them out first or they'd run twice.
+if [[ $os == macos ]]; then
+  for job in backup forget check; do
+    launchctl bootout "user/$(id -u)/local.resticprofile.home.$job" 2>/dev/null &&
+      echo "rbackup-setup: unloaded the old background-session $job job"
+  done
 fi
 resticprofile --config "$CONF/profiles.toml" --name home schedule
 echo "rbackup-setup: scheduled backup (hourly), forget + prune and check (weekly); \`rbackup doctor\` checks it all"
