@@ -9,6 +9,9 @@
 #                           schedule-log files (backup/check/forget)
 #   rbackup <anything else> passed to resticprofile, e.g. `rbackup snapshots`,
 #                           `rbackup backup`, `rbackup mount ~/mnt`
+#   --color=auto|always|never (first argument, or RBACKUP_COLOR) colors
+#                           rbackup's own output; auto means only on a
+#                           terminal, and NO_COLOR or TERM=dumb turns it off
 #
 # Reads ~/.config/rbackup/ (written by rbackup-setup): profiles.toml,
 # setup.env (install ID, log dir, canary path; not secret) and rbackup.env
@@ -19,6 +22,44 @@ CONF="${RBACKUP_CONF:-$HOME/.config/rbackup}"
 [[ -f $CONF/setup.env ]] || { echo "rbackup: no $CONF/setup.env; run setup-backup first" >&2; exit 1; }
 # shellcheck source=/dev/null
 . "$CONF/setup.env"   # RBACKUP_ID, RBACKUP_LOGS, RBACKUP_CANARY
+
+# Colors for rbackup's own output (resticprofile's passes through untouched).
+# Decided once per stream: stdout for reports, stderr for failures, so a
+# schedule log (a file) never gets escape codes.
+color_mode=${RBACKUP_COLOR:-auto}
+if [[ ${1:-} == --color=* ]]; then color_mode=${1#--color=}; shift; fi
+case $color_mode in
+  auto | always | never) ;;
+  *) echo "rbackup: --color must be auto, always or never (got $color_mode)" >&2; exit 2 ;;
+esac
+use_color() { # fd
+  case $color_mode in
+    always) return 0 ;;
+    never) return 1 ;;
+  esac
+  [[ -z ${NO_COLOR:-} && ${TERM:-dumb} != dumb && -t $1 ]]
+}
+C_OK="" C_BAD="" C_WARN="" C_BOLD="" C_DIM="" C_OFF=""
+if use_color 1; then
+  C_OK=$'\e[32m' C_BAD=$'\e[31m' C_WARN=$'\e[33m' C_BOLD=$'\e[1m' C_DIM=$'\e[2m' C_OFF=$'\e[0m'
+fi
+E_BAD="" E_OFF=""
+if use_color 2; then E_BAD=$'\e[31m' E_OFF=$'\e[0m'; fi
+
+# A status padded to the column width first, then colored, so the escape
+# codes never count toward printf's field width and columns stay aligned.
+status_cell() { # status width
+  local cell color
+  printf -v cell '%-*s' "$2" "$1"
+  case $1 in
+    ok) color=$C_OK ;;
+    running) color=$C_WARN ;;
+    error:* | interrupted | FAILED) color=$C_BAD ;;
+    *) color="" ;;
+  esac
+  [[ -n $color ]] && cell="$color$cell$C_OFF"
+  printf '%s' "$cell"
+}
 
 rp() { resticprofile --config "$CONF/profiles.toml" --name home "$@"; }
 
@@ -61,16 +102,16 @@ snapshot_age() {
 restore_test() {
   local got
   if ! got=$(r dump --host "$RBACKUP_ID" latest "$RBACKUP_CANARY" 2>/dev/null); then
-    echo "rbackup: restore-test FAILED: canary not in the latest snapshot ($RBACKUP_CANARY)" >&2
+    echo "rbackup: restore-test ${E_BAD}FAILED${E_OFF}: canary not in the latest snapshot ($RBACKUP_CANARY)" >&2
     ping_fail "restore-test failed on $RBACKUP_ID: canary missing"
     return 1
   fi
   if [[ $got != "$(cat "$RBACKUP_CANARY")" ]]; then
-    echo "rbackup: restore-test FAILED: restored canary differs from $RBACKUP_CANARY" >&2
+    echo "rbackup: restore-test ${E_BAD}FAILED${E_OFF}: restored canary differs from $RBACKUP_CANARY" >&2
     ping_fail "restore-test failed on $RBACKUP_ID: canary differs"
     return 1
   fi
-  echo "rbackup: restore-test ok (canary restored from the latest snapshot)"
+  echo "rbackup: restore-test ${C_OK}ok${C_OFF} (canary restored from the latest snapshot)"
 }
 
 rotate_logs() {
@@ -114,7 +155,7 @@ summary_job() {
   local logs=()
   [[ -f "$log.1" ]] && logs+=("$log.1")
   [[ -f "$log" ]] && logs+=("$log")
-  echo "== $job ($log) =="
+  echo "${C_BOLD}== $job ==${C_OFF} ${C_DIM}($log)${C_OFF}"
   if ((${#logs[@]} == 0)); then
     echo "  no log yet"
     return 0
@@ -187,7 +228,9 @@ summary_job() {
 
   # The header and every row share one format string per job, so a column
   # can't drift out of alignment with its own label.
-  local common='  %-20s %-12s %-8s' fmt
+  # STATUS is %s, not %-12s: status_cell pads it before coloring.
+  local common='  %-20s %s %-8s' fmt status_head
+  status_head=$(status_cell STATUS 12)
   case $job in
     backup) fmt="$common"' %-5s %-5s %-13s %-13s %s' ;;
     forget) fmt="$common"' %-8s %-10s' ;;
@@ -195,9 +238,9 @@ summary_job() {
   esac
   # shellcheck disable=SC2059 # $fmt is one of the three literals above, never data
   case $job in
-    backup) printf "$fmt\n" START STATUS DURATION NEW CHG ADDED STORED SNAPSHOT ;;
-    forget) printf "$fmt\n" START STATUS DURATION REMOVED REMAINING ;;
-    check) printf "$fmt\n" START STATUS DURATION RESTORE-TEST ;;
+    backup) printf "$fmt\n" START "$status_head" DURATION NEW CHG ADDED STORED SNAPSHOT ;;
+    forget) printf "$fmt\n" START "$status_head" DURATION REMOVED REMAINING ;;
+    check) printf "$fmt\n" START "$status_head" DURATION RESTORE-TEST ;;
   esac
 
   while IFS=$'\t' read -r start end stat procdur fn fc added stored snap removed remaining restore detail; do
@@ -222,14 +265,21 @@ summary_job() {
       fi
     fi
     [[ $dur == "-" ]] && dur="?"
+    local cell
+    cell=$(status_cell "$stat" 12)
     # shellcheck disable=SC2059 # $fmt is one of the three literals above, never data
     case $job in
-      backup) printf "$fmt" "$start" "$stat" "$dur" "$fn" "$fc" "$added" "$stored" "$snap" ;;
-      forget) printf "$fmt" "$start" "$stat" "$dur" "$removed" "$remaining" ;;
-      check) printf "$fmt" "$start" "$stat" "$dur" "$restore" ;;
+      backup) printf "$fmt" "$start" "$cell" "$dur" "$fn" "$fc" "$added" "$stored" "$snap" ;;
+      forget) printf "$fmt" "$start" "$cell" "$dur" "$removed" "$remaining" ;;
+      check)
+        # The last column: color it, padding is moot.
+        local rt=$restore
+        case $restore in ok) rt="$C_OK$restore$C_OFF" ;; FAILED) rt="$C_BAD$restore$C_OFF" ;; esac
+        printf "$fmt" "$start" "$cell" "$dur" "$rt" ;;
     esac
-    [[ $detail != "-" && $detail != "clean" ]] && printf ' (%s)' "$detail"
-    printf '%s\n' "$note"
+    [[ $detail != "-" && $detail != "clean" ]] && printf ' %s(%s)%s' "$C_WARN" "$detail" "$C_OFF"
+    [[ -n $note ]] && printf '%s%s%s' "$C_DIM" "$note" "$C_OFF"
+    printf '\n'
   done <<<"$rows"
 }
 
@@ -251,11 +301,11 @@ summary() {
 
 doctor() {
   local ok=0 age out
-  echo "rbackup doctor: $RBACKUP_ID"
+  echo "${C_BOLD}rbackup doctor: $RBACKUP_ID${C_OFF}"
   # status exits 0 even with nothing scheduled, so read what it says.
   out=$(rp status 2>&1) || ok=1
   printf '%s\n' "$out"
-  grep -q "no scheduled jobs found" <<<"$out" && { echo "  schedules: none (re-run setup-backup)"; ok=1; }
+  grep -q "no scheduled jobs found" <<<"$out" && { echo "  ${C_BAD}schedules: none${C_OFF} (re-run setup-backup)"; ok=1; }
   # status passes when any one job is scheduled (a failed setup left only
   # check), so ask the scheduler for each job directly. On macOS a plist on
   # disk isn't enough either: after a restart launchd may not have loaded it.
@@ -263,22 +313,27 @@ doctor() {
   for job in backup forget check; do
     if [[ $(uname -s) == Darwin ]]; then
       launchctl print "gui/$(id -u)/local.resticprofile.home.$job" &>/dev/null ||
-        { echo "  $job job: not loaded in launchd (re-run setup-backup)"; ok=1; }
+        { echo "  ${C_BAD}$job job: not loaded in launchd${C_OFF} (re-run setup-backup)"; ok=1; }
     else
       systemctl --user is-active --quiet "resticprofile-$job@profile-home.timer" ||
-        { echo "  $job timer: not active (re-run setup-backup)"; ok=1; }
+        { echo "  ${C_BAD}$job timer: not active${C_OFF} (re-run setup-backup)"; ok=1; }
     fi
   done
   age=$(snapshot_age)
   if [[ -z $age ]]; then
-    echo "  latest snapshot: none"; ok=1
+    echo "  ${C_BAD}latest snapshot: none${C_OFF}"; ok=1
   elif ((age > 26 * 3600)); then
     # Same window as the healthcheck (1 day + grace): laptops sleep overnight.
-    echo "  latest snapshot: $((age / 3600))h ago (more than 26h)"; ok=1
+    echo "  ${C_BAD}latest snapshot: $((age / 3600))h ago${C_OFF} (more than 26h)"; ok=1
   else
-    echo "  latest snapshot: $((age / 60))m ago"
+    echo "  latest snapshot: ${C_OK}$((age / 60))m ago${C_OFF}"
   fi
   restore_test || ok=1
+  if ((ok == 0)); then
+    echo "${C_OK}rbackup doctor: all checks passed${C_OFF}"
+  else
+    echo "${C_BAD}rbackup doctor: problems found (see above)${C_OFF}"
+  fi
   return $ok
 }
 
