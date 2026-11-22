@@ -18,7 +18,7 @@ jobs:
             "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
           tar -xJf shellcheck.tar.xz "shellcheck-v${SHELLCHECK_VERSION}/shellcheck"
           sudo install "shellcheck-v${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck
-      - run: shellcheck bin/rbackup bin/rbackup-setup
+      - run: shellcheck bin/rbackup bin/rbackup-setup && shellcheck -s bash completions/rbackup.bash
 
   validate-config:
     runs-on: ubuntu-latest

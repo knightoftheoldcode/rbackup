@@ -17,6 +17,7 @@ Part of the DevLab. Read more at [Knight of the Old Code](https://knightoftheold
 ```
 bin/rbackup             wrapper: doctor, restore-test, rotate-logs, summary, or any resticprofile command
 bin/rbackup-setup       one-time / idempotent setup for an install (macOS and Linux)
+completions/            tab completion: rbackup.bash (bash), _rbackup (zsh), installed by rbackup-setup
 config/*.toml.tmpl      resticprofile config, rendered per machine by rbackup-setup
 excludes/*.txt          restic exclude files: common.txt plus one per OS
 ```
@@ -58,6 +59,8 @@ rbackup summary backup --count 20  # more history, one job only
 rbackup restore latest --target /tmp/restore --include /Users/me/Documents/file.txt
 rbackup mount ~/mnt                # browse snapshots (needs macFUSE / FUSE)
 ```
+
+Tab completion covers rbackup's commands, `--color=`, `summary`'s jobs and `--count`, and the common resticprofile commands; setup installs it for bash (`completions/rbackup.bash`, loaded by bash-completion) and zsh (`completions/_rbackup`, plus a small `~/.zshrc` block). Open a new shell after setup.
 
 rbackup's own reports (`doctor`, `summary`, `restore-test`) are colored on a terminal: green for healthy, red for failures, yellow for lock waits and other details. Pipes, logs and scheduled runs stay plain. `NO_COLOR` or `TERM=dumb` turns color off; `--color=always|never` as the first argument (or `RBACKUP_COLOR`) overrides, for example `rbackup --color=always summary | less -R`.
 
