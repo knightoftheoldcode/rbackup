@@ -59,6 +59,8 @@ rbackup restore latest --target /tmp/restore --include /Users/me/Documents/file.
 rbackup mount ~/mnt                # browse snapshots (needs macFUSE / FUSE)
 ```
 
+rbackup's own reports (`doctor`, `summary`, `restore-test`) are colored on a terminal: green for healthy, red for failures, yellow for lock waits and other details. Pipes, logs and scheduled runs stay plain. `NO_COLOR` or `TERM=dumb` turns color off; `--color=always|never` as the first argument (or `RBACKUP_COLOR`) overrides, for example `rbackup --color=always summary | less -R`.
+
 `rbackup summary` reads the `schedule-log` files under `$RBACKUP_LOGS` (each job's own `backup.log`/`check.log`/`forget.log`, plus the rotated `.1` from `rotate-logs`), not the repository itself, so it only ever sees *scheduled* runs (the ones launchd/systemd triggered) — a manual `rbackup backup` from a terminal doesn't go through `schedule-log` and won't show up. Each row is a start time, status, duration, and job-specific stats (files new/changed and data added for backups; snapshots removed and repo size remaining for forget; the restore-test result for check). When a job's wall-clock time runs far longer than restic's own reported duration, the row calls that out: the restic process itself finished quickly, but resticprofile didn't log that the job was done until much later, which points at a stall in between (asleep, no network, something else holding the lock) rather than a slow backup.
 
 Never run `resticprofile --dry-run schedule`: it creates the real scheduled jobs.
