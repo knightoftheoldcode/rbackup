@@ -55,6 +55,8 @@ rbackup snapshots                  # list this install's snapshots
 rbackup doctor                     # schedules, latest snapshot age, canary restore
 rbackup summary                    # last 5 scheduled runs per job (backup/check/forget)
 rbackup summary backup --count 20  # more history, one job only
+rbackup status                     # one line: ok, running, failed, stale or none
+rbackup status --json              # the same for status bars and scripts
 rbackup restore latest --target /tmp/restore --include /Users/me/Documents/file.txt
 rbackup mount ~/mnt                # browse snapshots (needs macFUSE / FUSE)
 ```
@@ -64,6 +66,8 @@ rbackup's own reports (`doctor`, `summary`, `restore-test`) are colored on a ter
 `rbackup summary` reads the `schedule-log` files under `$RBACKUP_LOGS` (each job's own `backup.log`/`check.log`/`forget.log`, plus the rotated `.1` from `rotate-logs`), not the repository itself, so it only ever sees *scheduled* runs (the ones launchd/systemd triggered) — a manual `rbackup backup` from a terminal doesn't go through `schedule-log` and won't show up. Each row is a start time, status, duration, and job-specific stats (files new/changed and data added for backups; snapshots removed and repo size remaining for forget; the restore-test result for check). When a job's wall-clock time runs far longer than restic's own reported duration, the row calls that out: the restic process itself finished quickly, but resticprofile didn't log that the job was done until much later, which points at a stall in between (asleep, no network, something else holding the lock) rather than a slow backup.
 
 Never run `resticprofile --dry-run schedule`: it creates the real scheduled jobs.
+
+`rbackup status` answers "are backups healthy right now?" from local files only (the schedule logs and the scheduler; no network, no repository), so a status bar can run it every minute. The first state that applies wins: `running` (a scheduled job is in progress), `none` (no scheduled backup logged yet), `failed` (the last backup errored or was cut short, or the last restore-test failed), `stale` (no successful backup in 26 hours, the same window as `doctor`), otherwise `ok`. It exits 0 for `ok` and `running` and 1 otherwise. `--json` prints one object with `state`, `reason`, `last_backup`, `age_seconds`, `restore_test`, `restore_test_at`, `running` and `install`, plus `text`, `tooltip` and `class` in the shape Waybar's custom modules read, so it drops into Waybar as is.
 
 ## License
 

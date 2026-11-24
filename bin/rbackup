@@ -7,6 +7,8 @@
 #   rbackup rotate-logs     keep each log under 5 MB (run before each backup)
 #   rbackup summary         last N scheduled runs per job, parsed from the
 #                           schedule-log files (backup/check/forget)
+#   rbackup status [--json] are backups healthy right now? local files only
+#                           (no network), cheap enough for a status bar
 #   rbackup <anything else> passed to resticprofile, e.g. `rbackup snapshots`,
 #                           `rbackup backup`, `rbackup mount ~/mnt`
 #   --color=auto|always|never (first argument, or RBACKUP_COLOR) colors
@@ -140,28 +142,22 @@ fmt_dur() {
   fi
 }
 
-# Parses one job's schedule-log into one row per run (newest first): start,
-# end, status, restic's own duration (backup only), files new/changed, data
+# Parses one job's schedule-log into one tab-separated row per run (oldest
+# first): start, end, status, restic's own duration (backup only), files new/changed, data
 # added, snapshot id, snapshots removed, repo size remaining, restore-test
 # result, and a free-text detail (e.g. a lock contention). A run still open
 # at EOF, or one a later "starting" line clobbers without a "finished"/ERROR
 # in between, is reported as "interrupted".
-summary_job() {
-  local job=$1 count=$2 rows n=0
-  local log="$RBACKUP_LOGS/$job.log"
+parse_runs() { # job
+  local log="$RBACKUP_LOGS/$1.log"
   # rotate_logs (run-before, every backup) renames $log to $log.1 past 5 MB
   # and starts a fresh $log; read both, oldest first, or history silently
   # stops at the last rotation.
   local logs=()
   [[ -f "$log.1" ]] && logs+=("$log.1")
   [[ -f "$log" ]] && logs+=("$log")
-  echo "${C_BOLD}== $job ==${C_OFF} ${C_DIM}($log)${C_OFF}"
-  if ((${#logs[@]} == 0)); then
-    echo "  no log yet"
-    return 0
-  fi
-
-  rows=$(awk '
+  ((${#logs[@]})) || return 0
+  awk '
     # A run has two phases: "active" (between starting and finished/ERROR,
     # where the job body lines live) and, once finished, a trailing window
     # (still "have", not "active") where run-after output like the
@@ -219,7 +215,20 @@ summary_job() {
     /^rbackup: restore-test ok/ { restore = "ok" }
     /^rbackup: restore-test FAILED/ { restore = "FAILED" }
     END { if (have) { if (stat == "-") stat = "interrupted"; emit() } }
-  ' "${logs[@]}" | tail -n "$count" | awk '{ a[NR] = $0 } END { for (i = NR; i > 0; i--) print a[i] }')
+  ' "${logs[@]}"
+}
+
+# The last N runs of one job, newest first, as a table.
+summary_job() {
+  local job=$1 count=$2 rows n=0
+  local log="$RBACKUP_LOGS/$job.log"
+  echo "${C_BOLD}== $job ==${C_OFF} ${C_DIM}($log)${C_OFF}"
+  if [[ ! -f $log && ! -f $log.1 ]]; then
+    echo "  no log yet"
+    return 0
+  fi
+
+  rows=$(parse_runs "$job" | tail -n "$count" | awk '{ a[NR] = $0 } END { for (i = NR; i > 0; i--) print a[i] }')
 
   if [[ -z $rows ]]; then
     echo "  no completed runs logged yet"
@@ -299,6 +308,101 @@ summary() {
   done
 }
 
+# Is a scheduled job running right now? Asks the scheduler, so it's cheap
+# and doesn't touch the repository.
+job_running() { # backup|forget|check
+  if [[ $(uname -s) == Darwin ]]; then
+    launchctl print "gui/$(id -u)/local.resticprofile.home.$1" 2>/dev/null | grep -q "state = running"
+  else
+    systemctl --user is-active --quiet "resticprofile-$1@profile-home.service"
+  fi
+}
+
+# One-line (or JSON) health for status bars and scripts, from local state
+# only: the schedule logs and the scheduler. States, first match wins:
+# running, none (nothing logged), failed (last backup errored or was cut
+# short, or the last restore-test failed), stale (no good backup in 26h, the
+# doctor and healthcheck window), ok. Exits 0 for ok and running, else 1.
+status() {
+  local json=0 a
+  for a in "$@"; do
+    case $a in
+      --json) json=1 ;;
+      *) echo "rbackup status: unknown argument: $a (want --json)" >&2; return 2 ;;
+    esac
+  done
+
+  local running=() job
+  for job in backup forget check; do
+    job_running "$job" && running+=("$job")
+  done
+
+  local last good restore_row
+  last=$(parse_runs backup | tail -n 1)
+  good=$(parse_runs backup | awk -F'\t' '$3 == "ok"' | tail -n 1)
+  restore_row=$(parse_runs check | awk -F'\t' '$12 != "-"' | tail -n 1)
+
+  local last_stat="" good_at="" age="" restore="" restore_at=""
+  [[ -n $last ]] && last_stat=$(cut -f3 <<<"$last")
+  if [[ -n $good ]]; then
+    good_at=$(cut -f2 <<<"$good")
+    [[ $good_at == "-" ]] && good_at=$(cut -f1 <<<"$good")
+    local ge
+    ge=$(to_epoch "$good_at")
+    [[ -n $ge ]] && age=$(($(date +%s) - ge))
+  fi
+  if [[ -n $restore_row ]]; then
+    restore=$(cut -f12 <<<"$restore_row")
+    restore_at=$(cut -f1 <<<"$restore_row")
+  fi
+
+  local state reason=""
+  if ((${#running[@]})); then
+    state=running; reason="${running[*]} running"
+  elif [[ -z $last ]]; then
+    state=none; reason="no scheduled backup logged yet"
+  elif [[ $last_stat != ok ]]; then
+    state=failed; reason="last backup: $last_stat"
+  elif [[ $restore == FAILED ]]; then
+    state=failed; reason="restore-test failed on $restore_at"
+  elif [[ -z $age ]] || ((age > 26 * 3600)); then
+    state=stale; reason="no successful backup in 26h"
+  else
+    state=ok; reason="healthy"
+  fi
+
+  local ago="never"
+  [[ -n $age ]] && ago="$(fmt_dur "$age") ago"
+  local text="$state: last backup $ago"
+  [[ $state == ok ]] || text="$state ($reason), last backup $ago"
+  local tooltip
+  tooltip="rbackup $RBACKUP_ID
+State: $state ($reason)
+Last good backup: ${good_at:-none}${age:+ ($ago)}
+Last restore test: ${restore:-none}${restore_at:+ ($restore_at)}
+Running: ${running[*]:-nothing}"
+
+  if ((json)); then
+    jq -cn --arg state "$state" --arg text "$text" --arg tooltip "$tooltip" \
+      --arg reason "$reason" --arg last_good "$good_at" --arg age "${age:-}" \
+      --arg restore "$restore" --arg restore_at "$restore_at" --arg install "$RBACKUP_ID" \
+      --arg running "${running[*]:-}" '{
+        state: $state, class: $state, text: $text, tooltip: $tooltip, reason: $reason,
+        install: $install,
+        last_backup: (if $last_good == "" then null else $last_good end),
+        age_seconds: (if $age == "" then null else ($age | tonumber) end),
+        restore_test: (if $restore == "" then null else $restore end),
+        restore_test_at: (if $restore_at == "" then null else $restore_at end),
+        running: ($running | split(" ") | map(select(. != "")))
+      }'
+  else
+    local c=""
+    case $state in ok) c=$C_OK ;; running) c=$C_WARN ;; *) c=$C_BAD ;; esac
+    echo "${c}${text}${C_OFF}"
+  fi
+  [[ $state == ok || $state == running ]]
+}
+
 doctor() {
   local ok=0 age out
   echo "${C_BOLD}rbackup doctor: $RBACKUP_ID${C_OFF}"
@@ -342,6 +446,7 @@ case "${1:-}" in
   restore-test) restore_test ;;
   rotate-logs) rotate_logs ;;
   summary) shift; summary "$@" ;;
+  status) shift; status "$@" ;;
   "") sed -n '2,10s/^# \{0,1\}//p' "${BASH_SOURCE[0]}" ;;
   *) rp "$@" ;;
 esac
