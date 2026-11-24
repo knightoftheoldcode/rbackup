@@ -11,6 +11,7 @@ _rbackup() {
     'restore-test:restore the canary file from the latest snapshot'
     'rotate-logs:keep each log under 5 MB'
     'summary:last runs per job from the schedule logs'
+    'status:are backups healthy right now (--json for status bars)'
     'snapshots:list snapshots (resticprofile)'
     'backup:back up now (resticprofile)'
     'restore:restore files from a snapshot (resticprofile)'
@@ -24,7 +25,6 @@ _rbackup() {
     'forget:apply the retention policy (resticprofile)'
     'prune:remove unreferenced data (resticprofile)'
     'unlock:remove stale locks (resticprofile)'
-    'status:schedule status (resticprofile)'
     'schedule:install the schedules (resticprofile)'
     'unschedule:remove the schedules (resticprofile)'
     'show:show the profile (resticprofile)'
@@ -44,6 +44,7 @@ _rbackup() {
             '--count[runs to show per job]:count:' \
             '*:job:(backup check forget)'
           ;;
+        status) _arguments '--json[one JSON object for status bars and scripts]' ;;
         doctor | restore-test | rotate-logs) ;;
         *) _files ;;
       esac

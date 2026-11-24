@@ -142,10 +142,56 @@ fmt_dur() {
   fi
 }
 
+# Epoch seconds -> ISO 8601 with the local offset; nothing for empty input.
+to_iso() {
+  [[ -n ${1:-} ]] || return 0
+  date -d "@$1" +%Y-%m-%dT%H:%M:%S%:z 2>/dev/null || date -r "$1" +%Y-%m-%dT%H:%M:%S%z 2>/dev/null || true
+}
+
+# A job's next scheduled run (ISO 8601), from the systemd timer. Nothing on
+# macOS: launchd has no "next fire" query.
+next_run() { # backup|forget|check
+  [[ $(uname -s) == Darwin ]] && return 0
+  local v e
+  v=$(systemctl --user show "resticprofile-$1@profile-home.timer" -p NextElapseUSecRealtime --value 2>/dev/null) || return 0
+  [[ -n $v && $v != n/a ]] || return 0
+  e=$(date -d "$v" +%s 2>/dev/null) || return 0
+  to_iso "$e"
+}
+
+# One parse_runs row as a JSON object (or null): times in ISO 8601, the
+# duration in seconds, "-" as null, counts as numbers, plus the job's own
+# fields.
+run_json() { # job row
+  local job=$1 row=$2 start end se ee="" dur=""
+  [[ -n $row ]] || { echo null; return 0; }
+  IFS=$'\t' read -r start end _ <<<"$row"
+  se=$(to_epoch "$start")
+  [[ $end != "-" ]] && ee=$(to_epoch "$end")
+  [[ -n $se && -n $ee ]] && dur=$((ee - se))
+  jq -cn --arg job "$job" --arg row "$row" --arg start "$(to_iso "$se")" \
+    --arg end "$(to_iso "$ee")" --arg dur "$dur" '
+    ($row | split("\t")) as $f
+    | def v(i): if ($f[i] // "-") == "-" then null else $f[i] end;
+      def n(i): v(i) | if . == null then null else (tonumber? // null) end;
+      def s(x): if x == "" then null else x end;
+    {start: s($start), end: s($end), status: v(2),
+     duration_seconds: (s($dur) | if . == null then null else tonumber end),
+     detail: v(12)}
+    + if $job == "backup" then
+        {files_new: n(4), files_changed: n(5), added: v(6), stored: v(7), snapshot: v(8)}
+      elif $job == "forget" then
+        {snapshots_removed: n(9), snapshots_kept: n(13), repository_size: v(10)}
+      else
+        {restore_test: v(11)}
+      end'
+}
+
 # Parses one job's schedule-log into one tab-separated row per run (oldest
 # first): start, end, status, restic's own duration (backup only), files new/changed, data
 # added, snapshot id, snapshots removed, repo size remaining, restore-test
-# result, and a free-text detail (e.g. a lock contention). A run still open
+# result, a free-text detail (e.g. a lock contention), and snapshots kept
+# (forget: the sum of its "keep N snapshots" lines). A run still open
 # at EOF, or one a later "starting" line clobbers without a "finished"/ERROR
 # in between, is reported as "interrupted".
 parse_runs() { # job
@@ -167,12 +213,12 @@ parse_runs() { # job
     function reset() {
       start = "-"; end = "-"; stat = "-"; procdur = "-"; fn = "-"; fc = "-"
       added = "-"; stored = "-"; snap = "-"; removed = "-"; remaining = "-"
-      restore = "-"; detail = "-"; active = 0; have = 0
+      restore = "-"; detail = "-"; kept = 0; active = 0; have = 0
     }
     function emit() {
       print start "\t" end "\t" stat "\t" procdur "\t" fn "\t" fc "\t" \
         added "\t" stored "\t" snap "\t" removed "\t" remaining "\t" \
-        restore "\t" detail
+        restore "\t" detail "\t" (kept ? kept : "-")
     }
     BEGIN { reset() }
     $3 == "INFO" && $4 == "profile" && $6 == "starting" {
@@ -204,6 +250,7 @@ parse_runs() { # job
     }
     active && $1 == "snapshot" && $3 == "saved" { snap = $2 }
     active && /snapshots have been removed/ { removed = $1 }
+    active && $1 == "keep" && $3 ~ /^snapshots?:?$/ { kept += $2 }
     active && $1 == "remaining:" {
       line = $0
       sub(/^remaining:[ ]*/, "", line)
@@ -252,7 +299,7 @@ summary_job() {
     check) printf "$fmt\n" START "$status_head" DURATION RESTORE-TEST ;;
   esac
 
-  while IFS=$'\t' read -r start end stat procdur fn fc added stored snap removed remaining restore detail; do
+  while IFS=$'\t' read -r start end stat procdur fn fc added stored snap removed remaining restore detail _kept; do
     n=$((n + 1))
     local dur="$procdur" note=""
     if [[ $end != "-" ]]; then
@@ -383,7 +430,18 @@ Last restore test: ${restore:-none}${restore_at:+ ($restore_at)}
 Running: ${running[*]:-nothing}"
 
   if ((json)); then
-    jq -cn --arg state "$state" --arg text "$text" --arg tooltip "$tooltip" \
+    local jobs_json="{}" repo=null j row forget_ok
+    for j in backup forget check; do
+      row=$(parse_runs "$j" | tail -n 1)
+      jobs_json=$(jq -c --arg j "$j" --argjson last "$(run_json "$j" "$row")" \
+        --arg next "$(next_run "$j")" \
+        '. + {($j): {last_run: $last, next_run: (if $next == "" then null else $next end)}}' <<<"$jobs_json")
+    done
+    forget_ok=$(parse_runs forget | awk -F'\t' '$3 == "ok"' | tail -n 1)
+    if [[ -n $forget_ok ]]; then
+      repo=$(run_json forget "$forget_ok" | jq -c '{snapshots: .snapshots_kept, size: .repository_size, as_of: .end}')
+    fi
+    jq -cn --argjson jobs "$jobs_json" --argjson repository "$repo" --arg state "$state" --arg text "$text" --arg tooltip "$tooltip" \
       --arg reason "$reason" --arg last_good "$good_at" --arg age "${age:-}" \
       --arg restore "$restore" --arg restore_at "$restore_at" --arg install "$RBACKUP_ID" \
       --arg running "${running[*]:-}" '{
@@ -393,7 +451,8 @@ Running: ${running[*]:-nothing}"
         age_seconds: (if $age == "" then null else ($age | tonumber) end),
         restore_test: (if $restore == "" then null else $restore end),
         restore_test_at: (if $restore_at == "" then null else $restore_at end),
-        running: ($running | split(" ") | map(select(. != "")))
+        running: ($running | split(" ") | map(select(. != ""))),
+        schema: 2, jobs: $jobs, repository: $repository
       }'
   else
     local c=""
