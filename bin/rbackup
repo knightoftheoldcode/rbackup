@@ -355,6 +355,21 @@ summary() {
   done
 }
 
+# Which job holds the profile lock right now, if any. resticprofile writes
+# the lock for every run, scheduled or started by hand (`rbackup backup`):
+# line 2 is its PID. Prints backup, forget or check; returns 1 when the lock
+# is free, stale (process gone) or its PID now belongs to something else.
+lock_holder() {
+  local f="$CONF/home.lock" pid args
+  [[ -r $f ]] || return 1
+  pid=$(sed -n 2p "$f")
+  [[ $pid =~ ^[0-9]+$ ]] || return 1
+  args=$(ps -o args= -p "$pid" 2>/dev/null) || return 1
+  [[ $args == *resticprofile* ]] || return 1
+  [[ $args =~ (^|[[:space:]])(backup|forget|check)(@home)?([[:space:]]|$) ]] || return 1
+  echo "${BASH_REMATCH[2]}"
+}
+
 # Is a scheduled job running right now? Asks the scheduler, so it's cheap
 # and doesn't touch the repository.
 job_running() { # backup|forget|check
@@ -379,10 +394,17 @@ status() {
     esac
   done
 
-  local running=() job
-  for job in backup forget check; do
-    job_running "$job" && running+=("$job")
-  done
+  # The lock holder is the job actually running. A scheduled unit can be
+  # active while only waiting on that lock, so the scheduler is asked only
+  # when the lock is free.
+  local running=() job holder
+  if holder=$(lock_holder); then
+    running=("$holder")
+  else
+    for job in backup forget check; do
+      job_running "$job" && running+=("$job")
+    done
+  fi
 
   local last good restore_row
   last=$(parse_runs backup | tail -n 1)
