@@ -1,0 +1,54 @@
+#compdef rbackup
+# zsh completion for rbackup. rbackup-setup links this into
+# ~/.local/share/zsh/site-functions/_rbackup and adds that directory to fpath
+# in ~/.zshrc. Keep the command list in step with completions/rbackup.bash.
+
+_rbackup() {
+  local curcontext=$curcontext state line
+  local -a cmds
+  cmds=(
+    'doctor:schedules, latest snapshot age, canary restore'
+    'restore-test:restore the canary file from the latest snapshot'
+    'rotate-logs:keep each log under 5 MB'
+    'summary:last runs per job from the schedule logs'
+    'snapshots:list snapshots (resticprofile)'
+    'backup:back up now (resticprofile)'
+    'restore:restore files from a snapshot (resticprofile)'
+    'mount:browse snapshots as a filesystem (resticprofile)'
+    'ls:list files in a snapshot (resticprofile)'
+    'find:find files in snapshots (resticprofile)'
+    'diff:compare two snapshots (resticprofile)'
+    'dump:print a file from a snapshot (resticprofile)'
+    'stats:repository statistics (resticprofile)'
+    'check:check the repository (resticprofile)'
+    'forget:apply the retention policy (resticprofile)'
+    'prune:remove unreferenced data (resticprofile)'
+    'unlock:remove stale locks (resticprofile)'
+    'status:schedule status (resticprofile)'
+    'schedule:install the schedules (resticprofile)'
+    'unschedule:remove the schedules (resticprofile)'
+    'show:show the profile (resticprofile)'
+  )
+
+  _arguments -C \
+    '--color=[color rbackup output]:when:(auto always never)' \
+    '1:command:->command' \
+    '*::argument:->argument'
+
+  case $state in
+    command) _describe -t commands 'rbackup command' cmds ;;
+    argument)
+      case $line[1] in
+        summary)
+          _arguments \
+            '--count[runs to show per job]:count:' \
+            '*:job:(backup check forget)'
+          ;;
+        doctor | restore-test | rotate-logs) ;;
+        *) _files ;;
+      esac
+      ;;
+  esac
+}
+
+_rbackup "$@"

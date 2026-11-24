@@ -16,6 +16,9 @@
 #     profiles.toml rendered from config/profiles.toml.tmpl
 #   - links rbackup into ~/.local/bin and, if that isn't on the login
 #     shell's PATH, adds it to the shell's profile (~/.zprofile for zsh)
+#   - links tab completion for bash (bash-completion's per-user folder) and
+#     zsh (~/.local/share/zsh/site-functions, put on fpath by one guarded
+#     block in ~/.zshrc, which is backed up first)
 #   - writes the canary file restore-test looks for, initializes the repo if
 #     it doesn't exist yet, and, once the first snapshot exists, schedules
 #     backup (hourly), forget + prune and check (weekly)
@@ -174,6 +177,37 @@ if ! "$login_shell" -lic 'echo "$PATH"' 2>/dev/null </dev/null | tr ':' '\n' | g
   if ! grep -qF "$path_line" "$shell_profile" 2>/dev/null; then
     printf '\n%s\n' "$path_line" >>"$shell_profile"
     echo "rbackup-setup: added ~/.local/bin to PATH in $shell_profile (applies to new shells)"
+  fi
+fi
+
+# --- tab completion ---------------------------------------------------------
+# bash: bash-completion loads ~/.local/share/bash-completion/completions/<cmd>
+# on the first Tab. zsh: a site-functions folder on fpath; the ~/.zshrc block
+# registers rbackup's completion if compinit already ran, otherwise turns
+# completion on (macOS's zsh doesn't by default); a compinit later in the
+# file also finds it, since fpath is set first.
+link_completion() { # source dest
+  mkdir -p "$(dirname "$2")"
+  if [[ $(readlink "$2" 2>/dev/null) != "$1" ]]; then
+    ln -sfn "$1" "$2"
+    echo "rbackup-setup: linked $2"
+  fi
+}
+data_dir="${XDG_DATA_HOME:-$HOME/.local/share}"
+link_completion "$RBACKUP/completions/rbackup.bash" "$data_dir/bash-completion/completions/rbackup"
+link_completion "$RBACKUP/completions/_rbackup" "$HOME/.local/share/zsh/site-functions/_rbackup"
+if [[ $(basename "${SHELL:-}") == zsh ]]; then
+  zshrc="$HOME/.zshrc"
+  zsh_marker="# rbackup completion (added by rbackup-setup)"
+  touch "$zshrc"
+  if ! grep -qF "$zsh_marker" "$zshrc"; then
+    mkdir -p "$HOME/.local/share/rbackup/backups"
+    cp "$zshrc" "$HOME/.local/share/rbackup/backups/zshrc.$(date +%s)"
+    # shellcheck disable=SC2016 # expands in zsh, not here
+    printf '\n%s\n%s\n%s\n' "$zsh_marker" \
+      'fpath=("$HOME/.local/share/zsh/site-functions" $fpath)' \
+      'if (( $+functions[compdef] )); then autoload -Uz _rbackup && compdef _rbackup rbackup; else autoload -Uz compinit && compinit -i; fi' >>"$zshrc"
+    echo "rbackup-setup: added rbackup completion to $zshrc (backed up first; applies to new shells)"
   fi
 fi
 
