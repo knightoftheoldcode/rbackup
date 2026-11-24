@@ -8,8 +8,8 @@ _rbackup() {
 
   # rbackup's own commands, then the resticprofile/restic ones it passes
   # through. Keep in step with bin/rbackup's header and completions/_rbackup.
-  local own="doctor restore-test rotate-logs summary"
-  local passthrough="snapshots backup restore mount ls find diff dump stats check forget prune unlock status schedule unschedule show"
+  local own="doctor restore-test rotate-logs summary status"
+  local passthrough="snapshots backup restore mount ls find diff dump stats check forget prune unlock schedule unschedule show"
 
   # bash splits "--color=auto" into "--color" "=" "auto" (= is in
   # COMP_WORDBREAKS), and readline replaces only the part after "=", so
@@ -51,6 +51,9 @@ _rbackup() {
         [[ $used == *" $w "* ]] || opts+=" $w"
       done
       mapfile -t COMPREPLY < <(compgen -W "$opts" -- "$cur")
+      ;;
+    status)
+      [[ " ${COMP_WORDS[*]} " == *" --json "* ]] || mapfile -t COMPREPLY < <(compgen -W "--json" -- "$cur")
       ;;
     doctor | restore-test | rotate-logs) ;;
     *) mapfile -t COMPREPLY < <(compgen -f -- "$cur") ;;

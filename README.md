@@ -72,6 +72,13 @@ Never run `resticprofile --dry-run schedule`: it creates the real scheduled jobs
 
 `rbackup status` answers "are backups healthy right now?" from local files only (the schedule logs and the scheduler; no network, no repository), so a status bar can run it every minute. The first state that applies wins: `running` (a scheduled job is in progress), `none` (no scheduled backup logged yet), `failed` (the last backup errored or was cut short, or the last restore-test failed), `stale` (no successful backup in 26 hours, the same window as `doctor`), otherwise `ok`. It exits 0 for `ok` and `running` and 1 otherwise. `--json` prints one object with `state`, `reason`, `last_backup`, `age_seconds`, `restore_test`, `restore_test_at`, `running` and `install`, plus `text`, `tooltip` and `class` in the shape Waybar's custom modules read, so it drops into Waybar as is.
 
+Schema 2 (`"schema": 2`) adds, still from local state only:
+
+- `jobs`: for `backup`, `forget` and `check`, `last_run` (`start`, `end`, `status`, `duration_seconds`, `detail`; backups add `files_new`, `files_changed`, `added`, `stored` and `snapshot`; forget adds `snapshots_removed`, `snapshots_kept` and `repository_size`; check adds `restore_test`) and `next_run`. Times are ISO 8601 with the local offset. `next_run` comes from the systemd timer and is `null` on macOS, where launchd has no next-run query.
+- `repository`: `snapshots`, `size` and `as_of`, from the last successful forget (its kept snapshots and prune's remaining size), so they lag new backups until the next forget.
+
+Missing values are `null`; the earlier keys are unchanged.
+
 ## License
 
 rbackup is released under the [MIT License](https://opensource.org/licenses/MIT).
