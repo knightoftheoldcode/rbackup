@@ -13,9 +13,12 @@ $HOME/.local/share/Trash
 $HOME/.thumbnails
 $HOME/.var/app/*/cache
 
-# Games: reinstallable, and huge
+# Games: reinstallable, and huge. ~/Games holds the Wine prefixes Omarchy
+# makes for Battle.net and Lutris (one game can be 50 GiB). Saves worth
+# keeping come back as specific paths (game saves, #59).
 $HOME/.steam
 $HOME/.local/share/Steam
+$HOME/Games
 
 # Reinstallable toolchains
 $HOME/.npm
