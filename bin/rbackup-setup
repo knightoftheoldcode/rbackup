@@ -4,6 +4,13 @@
 # 1Password CLI first and passes the install ID.
 #
 #   rbackup-setup --id <install-id> --op-vault <1Password vault>
+#                 [--forget-at "<day> <HH:MM>"] [--check-at "<day> <HH:MM>"]
+#
+#   --forget-at and --check-at set this install's weekly slot for forget +
+#   prune and for check (default "Sun 03:00" and "Sun 05:00"). Installs share
+#   one B2 account and its daily download cap, so give each its own slot and
+#   keep it away from midnight UTC, when B2's caps reset. Pass them on every
+#   run: a run without them puts the defaults back.
 #
 #   - reads the 1Password item "rbackup <install-id>" (op asks for Touch ID
 #     or the system password once); scheduled runs never touch 1Password,
@@ -34,15 +41,24 @@ set -euo pipefail
 RBACKUP="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
 CONF="${RBACKUP_CONF:-$HOME/.config/rbackup}"
 
-id="" vault=""
+id="" vault="" forget_at="Sun 03:00" check_at="Sun 05:00"
 while (($#)); do
   case $1 in
     --id) id=$2; shift 2 ;;
     --op-vault) vault=$2; shift 2 ;;
+    --forget-at) forget_at=$2; shift 2 ;;
+    --check-at) check_at=$2; shift 2 ;;
     *) echo "rbackup-setup: unknown argument $1" >&2; exit 2 ;;
   esac
 done
-[[ -n $id && -n $vault ]] || { echo "usage: rbackup-setup --id <install-id> --op-vault <vault>" >&2; exit 2; }
+[[ -n $id && -n $vault ]] || { echo "usage: rbackup-setup --id <install-id> --op-vault <vault> [--forget-at \"<day> <HH:MM>\"] [--check-at \"<day> <HH:MM>\"]" >&2; exit 2; }
+# A weekly slot is one day and a time, which both systemd and launchd (through
+# resticprofile) understand.
+for slot in "$forget_at" "$check_at"; do
+  [[ $slot =~ ^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\ ([01][0-9]|2[0-3]):[0-5][0-9]$ ]] ||
+    { echo "rbackup-setup: weekly slot \"$slot\" isn't \"<Mon..Sun> <HH:MM>\"" >&2; exit 2; }
+done
+[[ $forget_at != "$check_at" ]] || { echo "rbackup-setup: forget and check can't share a slot" >&2; exit 2; }
 
 for cmd in restic resticprofile jq op curl openssl; do
   command -v "$cmd" &>/dev/null || { echo "rbackup-setup: $cmd not found" >&2; exit 1; }
@@ -146,6 +162,7 @@ render() {
   sed -e "s|@@ID@@|$id|g" -e "s|@@HOME@@|$HOME|g" -e "s|@@CONF@@|$CONF|g" \
     -e "s|@@RBACKUP@@|$RBACKUP|g" -e "s|@@OS@@|$os|g" -e "s|@@LOGS@@|$logs|g" \
     -e "s|@@SCHEDULE_PERMISSION@@|$schedule_permission|g" -e "s|@@AFTER_NETWORK_ONLINE@@|$after_network_online|g" \
+    -e "s|@@FORGET_AT@@|$forget_at|g" -e "s|@@CHECK_AT@@|$check_at|g" \
     -e "s|@@HC_URL@@|$hc_url|g" "$1"
 }
 profile=$(render "$RBACKUP/config/profiles.toml.tmpl")

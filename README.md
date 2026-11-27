@@ -9,7 +9,7 @@ Part of the DevLab. Read more at [Knight of the Old Code](https://knightoftheold
 - **One restic repo per install.** Each machine (or each OS on a dual-boot machine) backs up to its own prefix in one B2 bucket, with its own repo password and its own B2 application key scoped to that prefix. A leak on one machine never exposes another.
 - **A fixed install ID**, not the live hostname, is restic's `--host`, the B2 prefix and the 1Password item name, so renaming a machine never orphans its snapshots.
 - **Secrets live in 1Password.** Setup reads them once and writes `~/.config/rbackup/` (mode 700, files 600). Scheduled runs only read those files.
-- **Schedules:** backup hourly (skipped on battery under 20%), forget + prune weekly, and a weekly check that reads back 1 GiB of data and then restores a canary file and compares it.
+- **Schedules:** backup hourly (skipped on battery under 20%), forget + prune weekly, and a weekly check that reads back 1 GiB of data and then restores a canary file and compares it. The weekly slots default to Sunday 03:00 (forget) and 05:00 (check); `rbackup-setup --forget-at "Wed 03:30" --check-at "Wed 05:00"` gives an install its own, so installs sharing one B2 account can be staggered and kept away from midnight UTC, when B2's daily caps reset.
 - **Alerting:** optional healthchecks.io pings on every backup (exit code only, never file paths), plus `rbackup doctor`.
 
 ## Layout

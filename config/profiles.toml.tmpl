@@ -61,7 +61,7 @@ version = "1"
     keep-within-monthly = "1y"
     keep-within-yearly = "100y"
     prune = true
-    schedule = "Sun 03:00"
+    schedule = "@@FORGET_AT@@"
     schedule-permission = "@@SCHEDULE_PERMISSION@@"
     schedule-priority = "background"
     schedule-lock-wait = "1h"
@@ -72,7 +72,7 @@ version = "1"
   [home.check]
     read-data-subset = "1G"
     run-after = ["RBACKUP_CONF='@@CONF@@' '@@RBACKUP@@/bin/rbackup' restore-test"]
-    schedule = "Sun 05:00"
+    schedule = "@@CHECK_AT@@"
     schedule-permission = "@@SCHEDULE_PERMISSION@@"
     schedule-priority = "background"
     schedule-lock-wait = "1h"
